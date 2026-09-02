@@ -14,6 +14,8 @@ const _PLACEMENT_ATTEMPTS := 24
 
 var stats := SessionStats.new()
 var running: bool = false
+## 打开参数面板时为 true：计时冻结、靶机停住，但配置仍可热更新。
+var paused: bool = false
 
 var _def: ScenarioDef
 var _targets: Array[Target] = []
@@ -36,14 +38,45 @@ func start(def: ScenarioDef) -> void:
 	for i in def.target_count:
 		_spawn()
 	running = true
+	paused = false
+	_sync_target_processing()
 	stats_changed.emit()
 
 
 func stop() -> void:
 	running = false
+	paused = false
 	for t in _targets:
 		t.queue_free()
 	_targets.clear()
+
+
+## 暂停 / 恢复本局。与 [member running] 独立：暂停不是结束，关掉菜单后应从原地继续。
+func set_paused(on: bool) -> void:
+	paused = on
+	_sync_target_processing()
+
+
+## 把当前 [member ScenarioDef] 立刻铺到场上的靶机，不重开、不清成绩。
+## 散布和距离只影响下次换位，拖滑块时把靶机瞬移会让人没法瞄准。
+func apply_live() -> void:
+	if _def == null:
+		return
+	_time_left = maxf(0.0, _def.duration - _elapsed)
+	while _targets.size() < _def.target_count:
+		_spawn()
+	while _targets.size() > _def.target_count:
+		var extra: Target = _targets.pop_back()
+		extra.queue_free()
+	for t in _targets:
+		t.apply_live(_def)
+	_sync_target_processing()
+	if running and _time_left <= 0.0:
+		running = false
+		_sync_target_processing()
+		finished.emit()
+		return
+	stats_changed.emit()
 
 
 func active_targets() -> Array:
@@ -59,13 +92,14 @@ func elapsed() -> float:
 
 
 func _process(delta: float) -> void:
-	if not running:
+	if not running or paused:
 		return
 	_elapsed += delta
 	stats.elapsed = _elapsed
 	_time_left -= delta
 	if _time_left <= 0.0:
 		running = false
+		_sync_target_processing()
 		for t in _targets:
 			t.set_beam_lit(false)
 		finished.emit()
@@ -82,6 +116,7 @@ func report_kill(t: Target) -> void:
 		t.hide()
 		if _all_cleared():
 			running = false
+			_sync_target_processing()
 			finished.emit()
 	stats_changed.emit()
 
@@ -98,11 +133,19 @@ func _spawn() -> void:
 	add_child(t)
 	_targets.append(t)
 	_place(t)
+	t.set_process(running and not paused)
 
 
 func _place(t: Target) -> void:
 	t.setup(_def, _pick_position(), _rng, _elapsed)
 	t.show()
+	t.set_process(running and not paused)
+
+
+func _sync_target_processing() -> void:
+	var should_move := running and not paused
+	for t in _targets:
+		t.set_process(should_move)
 
 
 # 随机取一个不与现有靶机重叠的位置。尝试若干次仍失败就接受最后一次，

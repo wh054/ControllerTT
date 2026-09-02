@@ -6,6 +6,8 @@
 class_name SettingsPanel
 extends Control
 
+signal menu_requested
+
 const TAB_STICK := 0
 const TAB_ASSIST := 1
 const TAB_SCENARIO := 2
@@ -19,6 +21,7 @@ var _stick_box: VBoxContainer
 var _assist_box: VBoxContainer
 var _scenario_box: VBoxContainer
 var _data_box: VBoxContainer
+var _menu_btn: Button
 
 var _curve_graph: CurveGraph
 var _stick_pad: StickPad
@@ -50,6 +53,11 @@ func _process(_delta: float) -> void:
 
 func open_tab(index: int) -> void:
 	_tabs.current_tab = clampi(index, 0, _tabs.get_tab_count() - 1)
+
+
+func set_can_return_to_menu(on: bool) -> void:
+	if _menu_btn != null:
+		_menu_btn.visible = on
 
 
 func rebuild_all() -> void:
@@ -149,10 +157,16 @@ func _build_footer() -> Control:
 	reset.text = "全部恢复默认"
 	reset.pressed.connect(func() -> void:
 		App.apply_profile_preset(ControllerProfile.preset_cod_standard())
-		App.apply_assist_preset(AimAssistConfig.preset_apex())
+		App.apply_assist_preset(AimAssistConfig.preset_off())
 		rebuild_all()
 	)
 	bar.add_child(reset)
+
+	_menu_btn = Button.new()
+	_menu_btn.text = "返回主菜单"
+	_menu_btn.visible = false
+	_menu_btn.pressed.connect(func() -> void: menu_requested.emit())
+	bar.add_child(_menu_btn)
 
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -481,72 +495,90 @@ func _populate_scenario() -> void:
 	))
 	_scenario_box.add_child(UITheme.hint(d.description))
 	_scenario_box.add_child(UITheme.separator())
+	_scenario_box.add_child(UITheme.hint(
+		"改动立刻作用于当前这一局。散布和距离对已在场的靶机在下次换位后生效，按 R 可立即按新布置重开。"
+	))
 
-	# 场景参数不逐条热更新：改一格滑块就重开一局会让人没法调。统一由下面的按钮生效。
 	_section("武器", _scenario_box)
 	_add(ParamRow.options("开火方式",
 		PackedStringArray(["持续光束（计在靶时间）", "半自动", "全自动"]), d.weapon,
-	), func(v: int) -> void: d.weapon = v, _scenario_box)
+	), func(v: int) -> void:
+		d.weapon = v
+		_apply_scenario_live()
+	, _scenario_box)
 	_add(ParamRow.slider("射速", 1.0, 20.0, 0.5, d.fire_rate, " 发/s", 1), func(v: float) -> void:
 		d.fire_rate = v
+		_apply_scenario_live()
 	, _scenario_box)
 
 	_section("靶机", _scenario_box)
 	_add(ParamRow.slider("数量", 1, 12, 1, d.target_count, "", 0), func(v: float) -> void:
 		d.target_count = int(v)
+		_apply_scenario_live()
 	, _scenario_box)
 	_add(ParamRow.slider("半径", 0.05, 2.0, 0.01, d.target_radius, " m", 2), func(v: float) -> void:
 		d.target_radius = v
+		_apply_scenario_live()
 	, _scenario_box)
 	_add(ParamRow.slider("击杀所需命中", 1, 10, 1, d.hits_to_kill, "", 0), func(v: float) -> void:
 		d.hits_to_kill = int(v)
+		_apply_scenario_live()
 	, _scenario_box)
 	_add(ParamRow.toggle("命中后换位重生", d.respawn_on_hit), func(v: bool) -> void:
 		d.respawn_on_hit = v
+		_apply_scenario_live()
 	, _scenario_box)
 
 	_section("布置", _scenario_box)
 	_add(ParamRow.slider("最近距离", 3.0, 120.0, 0.5, d.distance_min, " m", 1), func(v: float) -> void:
 		d.distance_min = v
+		_apply_scenario_live()
 	, _scenario_box)
 	_add(ParamRow.slider("最远距离", 3.0, 120.0, 0.5, d.distance_max, " m", 1), func(v: float) -> void:
 		d.distance_max = v
+		_apply_scenario_live()
 	, _scenario_box)
 	_add(ParamRow.slider("水平散布", 1.0, 60.0, 0.5, d.spread_h, " m", 1,
 		"决定甩枪的转移幅度。"), func(v: float) -> void:
 		d.spread_h = v
+		_apply_scenario_live()
 	, _scenario_box)
 	_add(ParamRow.slider("垂直散布", 0.5, 20.0, 0.5, d.spread_v, " m", 1), func(v: float) -> void:
 		d.spread_v = v
+		_apply_scenario_live()
 	, _scenario_box)
 
 	_section("运动", _scenario_box)
 	_add(ParamRow.options("运动方式",
 		PackedStringArray(["静止", "水平横移", "三维漂移", "圆周"]), d.motion,
-	), func(v: int) -> void: d.motion = v, _scenario_box)
+	), func(v: int) -> void:
+		d.motion = v
+		_apply_scenario_live()
+	, _scenario_box)
 	_add(ParamRow.slider("最低速度", 0.0, 20.0, 0.1, d.speed_min, " m/s", 1), func(v: float) -> void:
 		d.speed_min = v
+		_apply_scenario_live()
 	, _scenario_box)
 	_add(ParamRow.slider("最高速度", 0.0, 20.0, 0.1, d.speed_max, " m/s", 1), func(v: float) -> void:
 		d.speed_max = v
+		_apply_scenario_live()
 	, _scenario_box)
 	_add(ParamRow.slider("运动幅度", 0.5, 30.0, 0.5, d.motion_range, " m", 1), func(v: float) -> void:
 		d.motion_range = v
+		_apply_scenario_live()
 	, _scenario_box)
 	_add(ParamRow.slider("变向频率", 0.0, 4.0, 0.05, d.direction_change_rate, " /s", 2,
 		"调高会显著增加追踪难度。设为 0 则运动可预测，那样练出来的是背板而不是跟枪。"),
-		func(v: float) -> void: d.direction_change_rate = v
+		func(v: float) -> void:
+			d.direction_change_rate = v
+			_apply_scenario_live()
 	, _scenario_box)
 
 	_section("时长", _scenario_box)
 	_add(ParamRow.slider("单局时长", 10.0, 300.0, 5.0, d.duration, " s", 0), func(v: float) -> void:
 		d.duration = v
+		_apply_scenario_live()
 	, _scenario_box)
-
-	var apply := Button.new()
-	apply.text = "应用并重开一局"
-	apply.pressed.connect(App.notify_scenario_changed)
-	_scenario_box.add_child(apply)
 
 
 # ---------------------------------------------------------------------------
@@ -598,6 +630,11 @@ func _refresh_data() -> void:
 # ---------------------------------------------------------------------------
 # 构建辅助
 # ---------------------------------------------------------------------------
+
+func _apply_scenario_live() -> void:
+	if scenario != null:
+		scenario.apply_live()
+
 
 func _section(title: String, box: VBoxContainer = null) -> void:
 	var target := box if box != null else _stick_box

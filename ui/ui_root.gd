@@ -1,13 +1,19 @@
-## 界面根节点：装配 HUD、参数面板与结算面板，并对外暴露开关。
+## 界面根节点：装配主菜单、HUD、参数面板与结算面板。
 class_name UIRoot
 extends CanvasLayer
 
 signal settings_toggled(open: bool)
 signal restart_requested
+signal random_requested
+signal scenario_requested(def: ScenarioDef)
+signal menu_requested
+signal quit_requested
 
+var _menu: MainMenu
 var _hud: HUD
 var _settings: SettingsPanel
 var _results: ResultsPanel
+var _in_session: bool = false
 
 
 func _ready() -> void:
@@ -15,17 +21,28 @@ func _ready() -> void:
 
 	_hud = HUD.new()
 	_hud.theme = theme
+	_hud.hide()
 	add_child(_hud)
+
+	_menu = MainMenu.new()
+	_menu.theme = theme
+	_menu.random_requested.connect(func() -> void: random_requested.emit())
+	_menu.scenario_requested.connect(func(d: ScenarioDef) -> void: scenario_requested.emit(d))
+	_menu.settings_requested.connect(func() -> void: set_settings_open(true))
+	_menu.quit_requested.connect(func() -> void: quit_requested.emit())
+	add_child(_menu)
 
 	_settings = SettingsPanel.new()
 	_settings.theme = theme
 	_settings.hide()
+	_settings.menu_requested.connect(func() -> void: menu_requested.emit())
 	add_child(_settings)
 
 	_results = ResultsPanel.new()
 	_results.theme = theme
 	_results.restart_requested.connect(func() -> void: restart_requested.emit())
 	_results.settings_requested.connect(func() -> void: set_settings_open(true))
+	_results.menu_requested.connect(func() -> void: menu_requested.emit())
 	add_child(_results)
 
 
@@ -38,8 +55,34 @@ func bind(player: Player, scenario: Scenario) -> void:
 
 
 func _process(_delta: float) -> void:
-	if not _settings.visible:
+	if _in_session and not _settings.visible:
 		_hud.refresh()
+
+
+func menu_visible() -> bool:
+	return _menu.visible and not _settings.visible
+
+
+func in_session() -> bool:
+	return _in_session
+
+
+func enter_play() -> void:
+	_in_session = true
+	_menu.hide()
+	_hud.show()
+	hide_results()
+	set_settings_open(false)
+	_settings.set_can_return_to_menu(true)
+
+
+func exit_play() -> void:
+	_in_session = false
+	_hud.hide()
+	hide_results()
+	set_settings_open(false)
+	_settings.set_can_return_to_menu(false)
+	_menu.show_home()
 
 
 func settings_open() -> bool:
@@ -57,12 +100,22 @@ func set_settings_open(open: bool) -> void:
 	if open:
 		_results.hide()
 		_settings.rebuild_all()
+		# 主菜单上打开设置时，菜单还在下面衬着；局内则 HUD 继续画准星没问题。
+	elif not _in_session:
+		_menu.show_home()
 	settings_toggled.emit(open)
 
 
 func open_settings_tab(index: int) -> void:
 	set_settings_open(true)
 	_settings.open_tab(index)
+
+
+func menu_go_home() -> void:
+	if _settings.visible:
+		set_settings_open(false)
+		return
+	_menu.show_home()
 
 
 func toggle_debug() -> void:

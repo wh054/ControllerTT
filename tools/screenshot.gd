@@ -26,6 +26,10 @@ func _capture_all() -> void:
 	var ui: UIRoot = main.get_node("UI")
 
 	await _wait(WARMUP_FRAMES)
+	_save("shot_menu.png")
+
+	main.start_session(ScenarioDef.preset_tracking())
+	await _wait(SETTLE_FRAMES)
 	_save("shot_hud.png")
 
 	ui.toggle_debug()

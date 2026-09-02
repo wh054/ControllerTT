@@ -7,6 +7,7 @@ extends Control
 
 signal restart_requested
 signal settings_requested
+signal menu_requested
 
 var _title: Label
 var _body: Label
@@ -94,7 +95,7 @@ func _build() -> void:
 
 	var frame := PanelContainer.new()
 	frame.add_theme_stylebox_override("panel", UITheme.panel_style(UITheme.PANEL, 10))
-	frame.custom_minimum_size = Vector2(540, 0)
+	frame.custom_minimum_size = Vector2(560, 0)
 	centerer.add_child(frame)
 
 	var box := VBoxContainer.new()
@@ -129,6 +130,12 @@ func _build() -> void:
 	tune.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tune.pressed.connect(func() -> void: settings_requested.emit())
 	buttons.add_child(tune)
+
+	var home := Button.new()
+	home.text = "返回主菜单"
+	home.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	home.pressed.connect(func() -> void: menu_requested.emit())
+	buttons.add_child(home)
 	box.add_child(buttons)
 
 	hide()

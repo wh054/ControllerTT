@@ -47,6 +47,22 @@ func setup(def: ScenarioDef, origin: Vector3, rng: RandomNumberGenerator, now: f
 	_build_visual()
 
 
+## 热更新运动与尺寸，不换位置。半径变了才重建网格。
+func apply_live(def: ScenarioDef) -> void:
+	var radius_changed := not is_equal_approx(radius, def.target_radius)
+	radius = def.target_radius
+	motion = def.motion
+	motion_range = def.motion_range
+	direction_change_rate = def.direction_change_rate
+	var lo := minf(def.speed_min, def.speed_max)
+	var hi := maxf(def.speed_min, def.speed_max)
+	speed = clampf(speed, lo, hi)
+	if health > def.hits_to_kill:
+		health = def.hits_to_kill
+	if radius_changed:
+		_build_visual()
+
+
 func _process(delta: float) -> void:
 	if not alive:
 		return

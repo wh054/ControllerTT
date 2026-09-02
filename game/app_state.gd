@@ -23,7 +23,7 @@ func _ready() -> void:
 		profile = ControllerProfile.preset_cod_standard()
 	assist = _load(ASSIST_PATH) as AimAssistConfig
 	if assist == null:
-		assist = AimAssistConfig.preset_apex()
+		assist = AimAssistConfig.preset_off()
 	scenario = _load(SCENARIO_PATH) as ScenarioDef
 	if scenario == null:
 		scenario = ScenarioDef.preset_tracking()

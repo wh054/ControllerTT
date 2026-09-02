@@ -8,8 +8,8 @@ extends Resource
 
 @export var config_name: String = "自定义"
 
-## 总开关。
-@export var enabled: bool = true:
+## 总开关。出厂默认关闭：训练器的目的是练摇杆，辅助必须是使用者主动打开的东西。
+@export var enabled: bool = false:
 	set(v):
 		enabled = v
 		emit_changed()
@@ -141,6 +141,7 @@ static func preset_off() -> AimAssistConfig:
 static func preset_cod() -> AimAssistConfig:
 	var c := AimAssistConfig.new()
 	c.config_name = "COD 风格"
+	c.enabled = true
 	c.master_strength = 1.0
 	c.slowdown_enabled = true
 	c.slowdown_strength = 0.55
@@ -161,6 +162,7 @@ static func preset_cod() -> AimAssistConfig:
 static func preset_apex() -> AimAssistConfig:
 	var c := AimAssistConfig.new()
 	c.config_name = "APEX 风格"
+	c.enabled = true
 	c.master_strength = 0.6  # 对应该作 PC 端的辅助强度档位
 	c.slowdown_enabled = true
 	c.slowdown_strength = 0.40
@@ -179,6 +181,7 @@ static func preset_apex() -> AimAssistConfig:
 static func preset_slowdown_only() -> AimAssistConfig:
 	var c := AimAssistConfig.new()
 	c.config_name = "仅减速（练跟枪用）"
+	c.enabled = true
 	c.slowdown_enabled = true
 	c.slowdown_strength = 0.35
 	c.rotation_enabled = false

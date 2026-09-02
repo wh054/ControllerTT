@@ -2,10 +2,11 @@
 .godot/
 *.translation
 
-# 导出产物
+# 导出产物。export_presets.cfg 要进仓库，否则别人 clone 下来没法直接打包。
 /build/
 /export/
-export_presets.cfg
+/ControllerTT.exe
+/*.lnk
 
 # 截图工具的输出，随时可用 scripts/shots.ps1 重新生成
 /shots/

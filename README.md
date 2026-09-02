@@ -8,11 +8,14 @@
 
 ## 快速开始
 
-需要 Godot 4.7 或更高版本的**标准版**（不需要 .NET/Mono 版）。
+**玩游戏：双击项目根目录的 `ControllerTT.exe`。** 那是打好包的单文件，不需要安装 Godot。
+
+本机还没有这份 exe 时，用下面的命令打一次（需要 Godot 4.7 标准版，不需要 .NET/Mono 版）：
 
 ```powershell
-powershell -File scripts\run.ps1           # 启动
-powershell -File scripts\run.ps1 -Editor   # 用编辑器打开
+powershell -File scripts\build.ps1         # 打包成可双击的 exe
+powershell -File scripts\run.ps1           # 不打包、直接用编辑器运行
+powershell -File scripts\run.ps1 -Editor   # 打开 Godot 编辑器
 powershell -File scripts\test.ps1          # 跑核心域单元测试
 powershell -File scripts\shots.ps1         # 截各个界面的图，用来检查界面有没有被改坏
 ```
@@ -25,14 +28,16 @@ powershell -File scripts\shots.ps1         # 截各个界面的图，用来检�
 
 ## 操作
 
+启动后先进入主菜单：**随机训练**、**场景训练**、**设置**、**退出**。局内按 Esc 打开参数面板（同时暂停），结算页可以再来一局或返回主菜单。
+
 | 手柄 | 键鼠（没手柄时的替代） | 作用 |
 |---|---|---|
 | 右摇杆 | 方向键 | 视角。**这是被训练的那条链路**，方向键会被模拟成带斜坡的摇杆 |
 | 左摇杆 | WASD | 移动。Apex 式的旋转跟枪需要移动输入才触发 |
 | 右扳机 | 鼠标左键 | 开火。追踪场景是持续光束，必须按住才计时 |
 | 左扳机 | 鼠标右键 | 开镜 |
-| Start | Esc | 参数面板 |
-| Back | R | 重开一局 |
+| Start | Esc | 主菜单：打开设置 / 返回上一级。局内：暂停并打开参数面板 |
+| Back | R | 局内重开一局 |
 | — | F1 | 显示辅助瞄准气泡的实际角度范围 |
 | — | 鼠标移动 | 直接控制视角。**绕过整条摇杆管线**，只用于四处看看，不能用来训练 |
 
