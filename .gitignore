@@ -1,0 +1,15 @@
+# Godot 生成的导入缓存与全局类索引，可完全重建
+.godot/
+*.translation
+
+# 导出产物
+/build/
+/export/
+export_presets.cfg
+
+# 截图工具的输出，随时可用 tools/shots.tscn 重新生成
+shot_*.png
+
+# 系统杂项
+Thumbs.db
+.DS_Store
