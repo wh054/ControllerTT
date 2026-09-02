@@ -13,6 +13,7 @@ var _title: Label
 var _body: Label
 var _advice: Label
 var _histogram: Histogram
+var _again_button: Button
 
 
 func _ready() -> void:
@@ -48,6 +49,9 @@ func show_for(scenario: Scenario) -> void:
 	_histogram.set_values(ratios)
 	_advice.text = _advise(s)
 	show()
+	# 场次结束时焦点通常还留在已隐藏的 HUD / 设置控件上。
+	# 主动落到“再来一局”，手柄无需先碰鼠标即可继续。
+	_again_button.grab_focus.call_deferred()
 
 
 # 根据摇杆分布给出下一步该调什么。规则很朴素，但比一堆裸数字有用得多。
@@ -119,14 +123,14 @@ func _build() -> void:
 
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 8)
-	var again := Button.new()
-	again.text = "再来一局（R）"
-	again.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	again.pressed.connect(func() -> void: restart_requested.emit())
-	buttons.add_child(again)
+	_again_button = Button.new()
+	_again_button.text = "再来一局（A / Y）"
+	_again_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_again_button.pressed.connect(func() -> void: restart_requested.emit())
+	buttons.add_child(_again_button)
 
 	var tune := Button.new()
-	tune.text = "调整参数（Esc）"
+	tune.text = "调整参数（Start / Esc）"
 	tune.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tune.pressed.connect(func() -> void: settings_requested.emit())
 	buttons.add_child(tune)

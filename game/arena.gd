@@ -5,6 +5,7 @@
 class_name Arena
 extends Node3D
 
+const FLOOR_Y := 0.0
 const HALF := 40.0
 const WALL_HEIGHT := 10.0
 const GRID_STEP := 2.0

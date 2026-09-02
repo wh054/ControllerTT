@@ -173,7 +173,7 @@ func _build() -> void:
 	_assist_label = _right_label("", 13, UITheme.TEXT)
 	bottom_right.add_child(_assist_label)
 	bottom_right.add_child(_right_label(
-		"Esc 参数面板    R 重开    F1 辅助气泡", 11, UITheme.MUTED,
+		"Start / Esc 参数面板    Y / R 重开    F1 辅助气泡", 11, UITheme.MUTED,
 	))
 
 

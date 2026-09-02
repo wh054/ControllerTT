@@ -100,9 +100,20 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventJoypadButton and event.pressed:
 		match (event as InputEventJoypadButton).button_index:
 			JOY_BUTTON_START:
-				ui.toggle_settings()
-			JOY_BUTTON_BACK:
 				if _in_session:
+					ui.toggle_settings()
+					get_viewport().set_input_as_handled()
+			JOY_BUTTON_B:
+				if ui.controller_back():
+					get_viewport().set_input_as_handled()
+			JOY_BUTTON_LEFT_SHOULDER:
+				if ui.controller_switch_settings_tab(-1):
+					get_viewport().set_input_as_handled()
+			JOY_BUTTON_RIGHT_SHOULDER:
+				if ui.controller_switch_settings_tab(1):
+					get_viewport().set_input_as_handled()
+			JOY_BUTTON_Y:
+				if _in_session and not ui.settings_open():
 					restart()
 	elif event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
 		if _in_session and not ui.settings_open() and not ui.menu_visible():

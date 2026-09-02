@@ -37,6 +37,14 @@ func _show_scenarios() -> void:
 		_scenario_focus.grab_focus()
 
 
+## 手柄 B / 键盘返回键使用。只有子页面会被消费，主页继续交给上层处理。
+func go_back() -> bool:
+	if not visible or not _scenario_page.visible:
+		return false
+	show_home()
+	return true
+
+
 func _build() -> void:
 	var dim := ColorRect.new()
 	dim.color = Color(0.02, 0.025, 0.04, 0.55)

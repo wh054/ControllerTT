@@ -8,6 +8,8 @@ extends Node3D
 const _BASE_COLOR := Color(1.0, 0.35, 0.30)
 const _HIT_COLOR := Color(1.0, 0.95, 0.55)
 const _BEAM_COLOR := Color(0.45, 1.0, 0.55)
+## 与略高于地面的网格线保持一点余量，避免球体和地面发生深度闪烁。
+const FLOOR_CLEARANCE := 0.02
 
 var radius: float = 0.35
 var motion: ScenarioDef.Motion = ScenarioDef.Motion.STRAFE
@@ -30,9 +32,9 @@ var _rng: RandomNumberGenerator
 
 func setup(def: ScenarioDef, origin: Vector3, rng: RandomNumberGenerator, now: float) -> void:
 	_rng = rng
-	_origin = origin
-	global_position = origin
 	radius = def.target_radius
+	_origin = _keep_above_floor(origin)
+	global_position = _origin
 	motion = def.motion
 	speed = rng.randf_range(def.speed_min, def.speed_max)
 	motion_range = def.motion_range
@@ -51,6 +53,10 @@ func setup(def: ScenarioDef, origin: Vector3, rng: RandomNumberGenerator, now: f
 func apply_live(def: ScenarioDef) -> void:
 	var radius_changed := not is_equal_approx(radius, def.target_radius)
 	radius = def.target_radius
+	var raised := _keep_above_floor(global_position)
+	if raised != global_position:
+		_origin.y += raised.y - global_position.y
+		global_position = raised
 	motion = def.motion
 	motion_range = def.motion_range
 	direction_change_rate = def.direction_change_rate
@@ -71,7 +77,7 @@ func _process(delta: float) -> void:
 
 
 ## 被子弹命中。返回是否因此被击毁。
-## 击毁后的处置（重生还是留在原地）由 [Scenario] 决定，靶机自己不作主。
+## 击毁后的处置（换位重生还是原地重生）由 [Scenario] 决定，靶机自己不作主。
 func take_hit() -> bool:
 	_flash = 1.0
 	health -= 1
@@ -95,11 +101,11 @@ func _advance_motion(delta: float) -> void:
 			return
 		ScenarioDef.Motion.ORBIT:
 			_phase += speed / maxf(motion_range, 0.1) * delta
-			global_position = _origin + Vector3(
+			global_position = _keep_above_floor(_origin + Vector3(
 				cos(_phase) * motion_range,
 				sin(_phase) * motion_range * 0.35,
 				0.0,
-			)
+			))
 		ScenarioDef.Motion.DRIFT:
 			_maybe_change_direction(delta)
 			var next := global_position + _dir * speed * delta
@@ -110,6 +116,10 @@ func _advance_motion(delta: float) -> void:
 					_dir[axis] = -_dir[axis]
 					offset[axis] = signf(offset[axis]) * motion_range
 			global_position = _origin + offset
+			var min_y := minimum_center_height(radius)
+			if global_position.y < min_y:
+				global_position.y = min_y
+				_dir.y = absf(_dir.y)
 		_:
 			_maybe_change_direction(delta)
 			var pos := global_position + _dir * speed * delta
@@ -118,6 +128,15 @@ func _advance_motion(delta: float) -> void:
 				dx = signf(dx) * motion_range
 				_dir = -_dir
 			global_position = Vector3(_origin.x + dx, pos.y, pos.z)
+
+
+static func minimum_center_height(target_radius: float) -> float:
+	return Arena.FLOOR_Y + maxf(0.0, target_radius) + FLOOR_CLEARANCE
+
+
+func _keep_above_floor(pos: Vector3) -> Vector3:
+	pos.y = maxf(pos.y, minimum_center_height(radius))
+	return pos
 
 
 # 用"每秒变向概率"而非固定周期，是为了让节奏不可预测——

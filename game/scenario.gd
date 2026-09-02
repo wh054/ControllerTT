@@ -113,19 +113,11 @@ func report_kill(t: Target) -> void:
 	if _def.respawn_on_hit:
 		_place(t)
 	else:
-		t.hide()
-		if _all_cleared():
-			running = false
-			_sync_target_processing()
-			finished.emit()
+		# “不换位”只控制击毁后的布置方式，不应把一个按时长进行的训练局
+		# 提前截断。原逻辑会逐个隐藏靶机，打完初始数量后场上再也没有目标。
+		# 在当前位置重新初始化可同时恢复生命值、运动状态和出生时间。
+		_respawn_in_place(t)
 	stats_changed.emit()
-
-
-func _all_cleared() -> bool:
-	for t in _targets:
-		if t.alive:
-			return false
-	return true
 
 
 func _spawn() -> void:
@@ -142,6 +134,12 @@ func _place(t: Target) -> void:
 	t.set_process(running and not paused)
 
 
+func _respawn_in_place(t: Target) -> void:
+	t.setup(_def, t.global_position, _rng, _elapsed)
+	t.show()
+	t.set_process(running and not paused)
+
+
 func _sync_target_processing() -> void:
 	var should_move := running and not paused
 	for t in _targets:
@@ -152,10 +150,12 @@ func _sync_target_processing() -> void:
 # 与其为了摆位卡住一帧，不如让两个靶机偶尔靠近一点。
 func _pick_position() -> Vector3:
 	var pos := Vector3.ZERO
+	var min_y := Target.minimum_center_height(_def.target_radius)
+	var max_y := maxf(min_y, Player.EYE_HEIGHT + _def.spread_v)
 	for attempt in _PLACEMENT_ATTEMPTS:
 		pos = Vector3(
 			_rng.randf_range(-_def.spread_h, _def.spread_h),
-			Player.EYE_HEIGHT + _rng.randf_range(-_def.spread_v, _def.spread_v),
+			_rng.randf_range(maxf(min_y, Player.EYE_HEIGHT - _def.spread_v), max_y),
 			-_rng.randf_range(_def.distance_min, _def.distance_max),
 		)
 		if _is_clear(pos):

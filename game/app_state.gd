@@ -18,6 +18,7 @@ var scenario: ScenarioDef
 
 
 func _ready() -> void:
+	_ensure_controller_ui_actions()
 	profile = _load(PROFILE_PATH) as ControllerProfile
 	if profile == null:
 		profile = ControllerProfile.preset_cod_standard()
@@ -27,6 +28,22 @@ func _ready() -> void:
 	scenario = _load(SCENARIO_PATH) as ScenarioDef
 	if scenario == null:
 		scenario = ScenarioDef.preset_tracking()
+
+
+# Godot 的内置方向导航默认包含 D-pad / 左摇杆，但 ui_accept 与 ui_cancel
+# 只有键盘映射。运行时补齐 A / B，保留引擎原有的 Enter、Space 与 Esc。
+func _ensure_controller_ui_actions() -> void:
+	_add_ui_button_if_missing(&"ui_accept", JOY_BUTTON_A)
+	_add_ui_button_if_missing(&"ui_cancel", JOY_BUTTON_B)
+
+
+func _add_ui_button_if_missing(action: StringName, button: JoyButton) -> void:
+	for existing in InputMap.action_get_events(action):
+		if existing is InputEventJoypadButton and (existing as InputEventJoypadButton).button_index == button:
+			return
+	var event := InputEventJoypadButton.new()
+	event.button_index = button
+	InputMap.action_add_event(action, event)
 
 
 ## 参数被面板改动后调用。三个通知分开，避免改一个滑块导致场景重开。

@@ -87,7 +87,9 @@ func set_row_enabled(on: bool) -> void:
 	modulate.a = 1.0 if on else 0.45
 	for c in get_children():
 		if c is Control and c != get_child(0):
-			(c as Control).mouse_filter = Control.MOUSE_FILTER_STOP if on else Control.MOUSE_FILTER_IGNORE
+			var control := c as Control
+			control.mouse_filter = Control.MOUSE_FILTER_STOP if on else Control.MOUSE_FILTER_IGNORE
+			control.focus_mode = Control.FOCUS_ALL if on else Control.FOCUS_NONE
 
 
 func _add_label(text: String, tip: String) -> void:

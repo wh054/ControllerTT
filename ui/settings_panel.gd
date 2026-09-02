@@ -12,6 +12,10 @@ const TAB_STICK := 0
 const TAB_ASSIST := 1
 const TAB_SCENARIO := 2
 const TAB_DATA := 3
+const _NAV_INITIAL_DELAY := 0.34
+const _NAV_REPEAT_INTERVAL := 0.09
+const _STICK_NAV_THRESHOLD := 0.65
+const _ROW_Y_TOLERANCE := 10.0
 
 var player: Player
 var scenario: Scenario
@@ -22,11 +26,16 @@ var _assist_box: VBoxContainer
 var _scenario_box: VBoxContainer
 var _data_box: VBoxContainer
 var _menu_btn: Button
+var _save_btn: Button
+var _reset_btn: Button
 
 var _curve_graph: CurveGraph
 var _stick_pad: StickPad
 var _histogram: Histogram
 var _data_text: Label
+var _held_nav := Vector2i.ZERO
+var _stick_nav := Vector2.ZERO
+var _nav_repeat_left := 0.0
 
 
 func _ready() -> void:
@@ -35,9 +44,10 @@ func _ready() -> void:
 	rebuild_all()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if not visible or player == null:
 		return
+	_advance_nav_repeat(delta)
 	# 面板开着时玩家的 _process 已停，这里主动采一次样，
 	# 否则曲线图上的实时游标会僵住，等于废掉了边调边试的能力。
 	var raw := player.reader.look_raw(get_process_delta_time())
@@ -51,8 +61,70 @@ func _process(_delta: float) -> void:
 		_refresh_data()
 
 
+func _input(event: InputEvent) -> void:
+	if not visible:
+		return
+	var direction := Vector2i.ZERO
+	var relevant := false
+	if event is InputEventJoypadButton:
+		var button := event as InputEventJoypadButton
+		match button.button_index:
+			JOY_BUTTON_DPAD_UP:
+				direction = Vector2i.UP if button.pressed else Vector2i.ZERO
+				relevant = true
+			JOY_BUTTON_DPAD_DOWN:
+				direction = Vector2i.DOWN if button.pressed else Vector2i.ZERO
+				relevant = true
+			JOY_BUTTON_DPAD_LEFT:
+				direction = Vector2i.LEFT if button.pressed else Vector2i.ZERO
+				relevant = true
+			JOY_BUTTON_DPAD_RIGHT:
+				direction = Vector2i.RIGHT if button.pressed else Vector2i.ZERO
+				relevant = true
+	elif event is InputEventJoypadMotion:
+		var motion := event as InputEventJoypadMotion
+		if motion.axis == JOY_AXIS_LEFT_X:
+			_stick_nav.x = motion.axis_value
+			relevant = true
+		elif motion.axis == JOY_AXIS_LEFT_Y:
+			_stick_nav.y = motion.axis_value
+			relevant = true
+		if relevant:
+			direction = _stick_direction()
+
+	if not relevant:
+		return
+	var focus := get_viewport().gui_get_focus_owner()
+	if focus is OptionButton and (focus as OptionButton).get_popup().visible:
+		# 展开的选项列表接管方向键；此时保持原生“上下选择、A 确认、B 取消”。
+		_held_nav = Vector2i.ZERO
+		_nav_repeat_left = 0.0
+		return
+	if direction == Vector2i.ZERO:
+		_held_nav = Vector2i.ZERO
+		_nav_repeat_left = 0.0
+	elif direction != _held_nav:
+		_held_nav = direction
+		_nav_repeat_left = _NAV_INITIAL_DELAY
+		_navigate(direction)
+	get_viewport().set_input_as_handled()
+
+
 func open_tab(index: int) -> void:
 	_tabs.current_tab = clampi(index, 0, _tabs.get_tab_count() - 1)
+	_queue_controller_focus()
+
+
+## LB / RB 在设置分页间循环，切页后把焦点落到该页第一个可操作控件。
+func switch_tab(step: int) -> void:
+	if not visible or _tabs.get_tab_count() == 0:
+		return
+	_tabs.current_tab = wrapi(_tabs.current_tab + step, 0, _tabs.get_tab_count())
+	_queue_controller_focus()
+
+
+func activate_controller_focus() -> void:
+	_queue_controller_focus()
 
 
 func set_can_return_to_menu(on: bool) -> void:
@@ -95,10 +167,12 @@ func _build_frame() -> void:
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(spacer)
-	header.add_child(UITheme.label("Esc 关闭面板并继续训练", 12, UITheme.MUTED))
+	header.add_child(UITheme.label("LB / RB 切页　↑↓ 选项　←→ 调值　A 确认　B 返回", 12, UITheme.MUTED))
 	root.add_child(header)
 
 	_tabs = TabContainer.new()
+	# 分页由肩键切换；焦点只在实际参数控件间移动，避免卡在标签栏。
+	_tabs.focus_mode = Control.FOCUS_NONE
 	_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root.add_child(_tabs)
 
@@ -148,19 +222,19 @@ func _build_footer() -> Control:
 	var bar := HBoxContainer.new()
 	bar.add_theme_constant_override("separation", 8)
 
-	var save := Button.new()
-	save.text = "保存配置"
-	save.pressed.connect(App.save_all)
-	bar.add_child(save)
+	_save_btn = Button.new()
+	_save_btn.text = "保存配置"
+	_save_btn.pressed.connect(App.save_all)
+	bar.add_child(_save_btn)
 
-	var reset := Button.new()
-	reset.text = "全部恢复默认"
-	reset.pressed.connect(func() -> void:
+	_reset_btn = Button.new()
+	_reset_btn.text = "全部恢复默认"
+	_reset_btn.pressed.connect(func() -> void:
 		App.apply_profile_preset(ControllerProfile.preset_cod_standard())
 		App.apply_assist_preset(AimAssistConfig.preset_off())
 		rebuild_all()
 	)
-	bar.add_child(reset)
+	bar.add_child(_reset_btn)
 
 	_menu_btn = Button.new()
 	_menu_btn.text = "返回主菜单"
@@ -342,7 +416,43 @@ func _add_curve_controls(curve: ResponseCurve, title: String) -> void:
 					_curve_graph.queue_redraw()
 			)
 		ResponseCurve.Type.BEZIER:
-			_stick_box.add_child(UITheme.hint("直接在上方曲线图里拖动两个橙色控制点。"))
+			_stick_box.add_child(UITheme.hint(
+				"可直接拖动上方橙色控制点，也可用下面四个数值通过手柄精调。"
+			))
+			_add_bezier_controls(curve)
+
+
+func _add_bezier_controls(curve: ResponseCurve) -> void:
+	_add(ParamRow.slider("控制点 1 · X", 0.0, 1.0, 0.01, curve.bezier_p1.x, "", 2), func(v: float) -> void:
+		var point := curve.bezier_p1
+		point.x = v
+		curve.bezier_p1 = point
+		_on_curve_value_changed()
+	)
+	_add(ParamRow.slider("控制点 1 · Y", 0.0, 1.0, 0.01, curve.bezier_p1.y, "", 2), func(v: float) -> void:
+		var point := curve.bezier_p1
+		point.y = v
+		curve.bezier_p1 = point
+		_on_curve_value_changed()
+	)
+	_add(ParamRow.slider("控制点 2 · X", 0.0, 1.0, 0.01, curve.bezier_p2.x, "", 2), func(v: float) -> void:
+		var point := curve.bezier_p2
+		point.x = v
+		curve.bezier_p2 = point
+		_on_curve_value_changed()
+	)
+	_add(ParamRow.slider("控制点 2 · Y", 0.0, 1.0, 0.01, curve.bezier_p2.y, "", 2), func(v: float) -> void:
+		var point := curve.bezier_p2
+		point.y = v
+		curve.bezier_p2 = point
+		_on_curve_value_changed()
+	)
+
+
+func _on_curve_value_changed() -> void:
+	App.notify_profile_changed()
+	if _curve_graph != null:
+		_curve_graph.queue_redraw()
 
 
 # ---------------------------------------------------------------------------
@@ -496,7 +606,7 @@ func _populate_scenario() -> void:
 	_scenario_box.add_child(UITheme.hint(d.description))
 	_scenario_box.add_child(UITheme.separator())
 	_scenario_box.add_child(UITheme.hint(
-		"改动立刻作用于当前这一局。散布和距离对已在场的靶机在下次换位后生效，按 R 可立即按新布置重开。"
+		"改动立刻作用于当前这一局。散布和距离对已在场的靶机在下次换位后生效，按 Y / R 可立即按新布置重开。"
 	))
 
 	_section("武器", _scenario_box)
@@ -652,3 +762,172 @@ func _clear(box: VBoxContainer) -> void:
 	for c in box.get_children():
 		c.queue_free()
 		box.remove_child(c)
+	if visible:
+		_queue_controller_focus()
+
+
+func _queue_controller_focus() -> void:
+	_focus_first_control.call_deferred()
+
+
+func _focus_first_control() -> void:
+	if not visible or _tabs == null or _tabs.get_tab_count() == 0:
+		return
+	var page := _tabs.get_child(_tabs.current_tab)
+	var first := _find_focusable(page)
+	if first == null:
+		first = _save_btn
+	if first != null and first.is_visible_in_tree():
+		_focus_control(first)
+
+
+func _find_focusable(node: Node) -> Control:
+	if node is Control:
+		var control := node as Control
+		var actionable := control is BaseButton or control is Range
+		if actionable and control.focus_mode != Control.FOCUS_NONE and control.is_visible_in_tree():
+			if not (control is BaseButton and (control as BaseButton).disabled):
+				return control
+	for child in node.get_children():
+		var found := _find_focusable(child)
+		if found != null:
+			return found
+	return null
+
+
+func _advance_nav_repeat(delta: float) -> void:
+	if _held_nav == Vector2i.ZERO:
+		return
+	_nav_repeat_left -= delta
+	if _nav_repeat_left > 0.0:
+		return
+	_navigate(_held_nav)
+	_nav_repeat_left = _NAV_REPEAT_INTERVAL
+
+
+func _stick_direction() -> Vector2i:
+	if maxf(absf(_stick_nav.x), absf(_stick_nav.y)) < _STICK_NAV_THRESHOLD:
+		return Vector2i.ZERO
+	if absf(_stick_nav.y) >= absf(_stick_nav.x):
+		return Vector2i.DOWN if _stick_nav.y > 0.0 else Vector2i.UP
+	return Vector2i.RIGHT if _stick_nav.x > 0.0 else Vector2i.LEFT
+
+
+func _navigate(direction: Vector2i) -> void:
+	var focus := get_viewport().gui_get_focus_owner()
+	var rows := _controller_rows()
+	if rows.is_empty():
+		return
+	if focus == null or not is_ancestor_of(focus):
+		_focus_control(rows[0][0])
+		return
+	if direction.y != 0:
+		_navigate_vertical(focus, rows, direction.y)
+	else:
+		_navigate_horizontal(focus, rows, direction.x)
+
+
+func _navigate_vertical(focus: Control, rows: Array, step: int) -> void:
+	var row_index := _row_containing(rows, focus)
+	if row_index < 0:
+		_focus_control(rows[0][0])
+		return
+	var next_row: Array = rows[wrapi(row_index + step, 0, rows.size())]
+	var focus_x := focus.global_position.x + focus.size.x * 0.5
+	var best := next_row[0] as Control
+	var best_distance := INF
+	for candidate in next_row:
+		var control := candidate as Control
+		var center_x := control.global_position.x + control.size.x * 0.5
+		var distance := absf(center_x - focus_x)
+		if distance < best_distance:
+			best = control
+			best_distance = distance
+	_focus_control(best)
+
+
+func _navigate_horizontal(focus: Control, rows: Array, step: int) -> void:
+	if focus is Range:
+		var range := focus as Range
+		var increment := range.step if range.step > 0.0 else (range.max_value - range.min_value) / 100.0
+		range.value = clampf(range.value + increment * step, range.min_value, range.max_value)
+		return
+	if focus is CheckButton:
+		var check := focus as CheckButton
+		check.button_pressed = step > 0
+		return
+	if focus is OptionButton:
+		var option := focus as OptionButton
+		if option.item_count > 0:
+			var selected := wrapi(option.selected + step, 0, option.item_count)
+			option.select(selected)
+			option.item_selected.emit(selected)
+		return
+	var row_index := _row_containing(rows, focus)
+	if row_index < 0:
+		return
+	var row: Array = rows[row_index]
+	if row.size() <= 1:
+		return
+	var item_index := row.find(focus)
+	_focus_control(row[wrapi(item_index + step, 0, row.size())])
+
+
+func _controller_rows() -> Array:
+	var items: Array[Control] = []
+	if _tabs != null and _tabs.get_tab_count() > 0:
+		_collect_focusable(_tabs.get_child(_tabs.current_tab), items)
+	for button in [_save_btn, _reset_btn, _menu_btn]:
+		if button != null and button.is_visible_in_tree():
+			items.append(button)
+	items.sort_custom(func(a: Control, b: Control) -> bool:
+		if absf(a.global_position.y - b.global_position.y) <= _ROW_Y_TOLERANCE:
+			return a.global_position.x < b.global_position.x
+		return a.global_position.y < b.global_position.y
+	)
+	var rows: Array = []
+	for item in items:
+		if rows.is_empty():
+			rows.append([item])
+			continue
+		var row: Array = rows[-1]
+		var anchor := row[0] as Control
+		if absf(item.global_position.y - anchor.global_position.y) <= _ROW_Y_TOLERANCE:
+			row.append(item)
+		else:
+			rows.append([item])
+	return rows
+
+
+func _collect_focusable(node: Node, out: Array[Control]) -> void:
+	if node is Control:
+		var control := node as Control
+		var actionable := control is BaseButton or control is Range
+		if actionable and control.focus_mode != Control.FOCUS_NONE and control.is_visible_in_tree():
+			if not (control is BaseButton and (control as BaseButton).disabled):
+				out.append(control)
+	for child in node.get_children():
+		_collect_focusable(child, out)
+
+
+func _row_containing(rows: Array, focus: Control) -> int:
+	for i in rows.size():
+		if (rows[i] as Array).has(focus):
+			return i
+	return -1
+
+
+func _focus_control(control: Control) -> void:
+	control.grab_focus()
+	_ensure_focus_visible.bind(control).call_deferred()
+
+
+func _ensure_focus_visible(control: Control) -> void:
+	if not is_instance_valid(control):
+		return
+	var parent := control.get_parent()
+	while parent != null and parent != self:
+		if parent is ScrollContainer:
+			(parent as ScrollContainer).ensure_control_visible(control)
+			return
+		parent = parent.get_parent()

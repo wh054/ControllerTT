@@ -28,7 +28,10 @@ func _run() -> void:
 	await _frames(5)
 
 	await _check_starts_on_menu()
+	await _check_controller_ui_flow()
 	await _check_each_scenario_preset()
+	await _check_targets_stay_above_floor()
+	await _check_targets_keep_respawning()
 	await _check_round_finishes()
 	await _check_settings_pause()
 	await _check_settings_apply_live()
@@ -53,6 +56,65 @@ func _check_starts_on_menu() -> void:
 	print("[OK] 启动停在主菜单")
 
 
+func _check_controller_ui_flow() -> void:
+	await _tap_joy(JOY_BUTTON_DPAD_DOWN)
+	await _tap_joy(JOY_BUTTON_DPAD_DOWN)
+	await _tap_joy(JOY_BUTTON_A)
+	_expect(_ui.settings_open(), "主菜单应通过上下选择与 A 打开设置")
+	var settings := _ui.get("_settings") as SettingsPanel
+	var focus := get_viewport().gui_get_focus_owner()
+	_expect(focus != null and settings.is_ancestor_of(focus), "设置打开后焦点应落在可操作控件上")
+	var first_focus := focus
+	await _tap_axis(JOY_AXIS_LEFT_Y, 1.0)
+	focus = get_viewport().gui_get_focus_owner()
+	_expect(focus != first_focus, "设置中左摇杆向下应严格移动到下一行")
+
+	var tabs := settings.get("_tabs") as TabContainer
+	var before_tab: int = tabs.current_tab
+	await _tap_joy(JOY_BUTTON_RIGHT_SHOULDER)
+	_expect(tabs.current_tab == before_tab + 1, "RB 应切换到下一设置分页")
+
+	var page := tabs.get_child(tabs.current_tab)
+	var sliders := page.find_children("*", "HSlider", true, false)
+	var slider := sliders[0] as HSlider
+	slider.grab_focus()
+	var before_value := slider.value
+	await _tap_joy(JOY_BUTTON_DPAD_RIGHT)
+	_expect(slider.value > before_value, "D-pad 左右应能调节设置滑块")
+
+	var checks := page.find_children("*", "CheckButton", true, false)
+	var check := checks[0] as CheckButton
+	check.grab_focus()
+	var before_checked := check.button_pressed
+	await _tap_joy(JOY_BUTTON_A)
+	_expect(check.button_pressed != before_checked, "A 应能切换设置开关")
+
+	await _tap_joy(JOY_BUTTON_RIGHT_SHOULDER)
+	page = tabs.get_child(tabs.current_tab)
+	var options := page.find_children("*", "OptionButton", true, false)
+	var option := options[0] as OptionButton
+	option.grab_focus()
+	var before_option := option.selected
+	await _tap_joy(JOY_BUTTON_DPAD_RIGHT)
+	_expect(option.selected != before_option, "选项折叠时左右应直接切换值")
+	await _tap_joy(JOY_BUTTON_A)
+	_expect(option.get_popup().visible, "A 应能打开设置选项")
+	await _tap_joy(JOY_BUTTON_B)
+	_expect(_ui.settings_open() and not option.get_popup().visible, "选项展开时 B 应先关闭选项")
+
+	await _tap_joy(JOY_BUTTON_B)
+	_expect(not _ui.settings_open() and _ui.menu_visible(), "设置中按 B 应返回主菜单")
+
+	var menu := _ui.get("_menu") as MainMenu
+	await _tap_joy(JOY_BUTTON_DPAD_DOWN)
+	await _tap_joy(JOY_BUTTON_A)
+	var scenario_page := menu.get("_scenario_page") as Control
+	_expect(scenario_page.visible, "主菜单应能用方向键与 A 进入场景选择")
+	await _tap_joy(JOY_BUTTON_B)
+	_expect(not scenario_page.visible and _ui.menu_visible(), "场景选择中按 B 应返回主页")
+	print("[OK] 手柄可打开设置、切页、聚焦、调值、确认并返回")
+
+
 # 四种场景都要能布置出靶机并正常推进。靶机数、运动方式各不相同，
 # 任何一种的参数组合让 _pick_position 死循环或 setup 出错都会在这里暴露。
 func _check_each_scenario_preset() -> void:
@@ -72,6 +134,62 @@ func _check_each_scenario_preset() -> void:
 	print("[OK] 四种场景均可正常开局")
 
 
+# 极端垂直散布与三维运动也不能让球体中心随机到地板下，或在运动后穿地。
+func _check_targets_stay_above_floor() -> void:
+	var def := ScenarioDef.preset_precision()
+	def.duration = 30.0
+	def.target_count = 12
+	def.target_radius = 2.0
+	def.spread_v = 20.0
+	_main.start_session(def)
+	await _frames(3)
+
+	for node in _scenario.active_targets():
+		var target := node as Target
+		_expect(
+			target.global_position.y >= Target.minimum_center_height(target.radius),
+			"随机出生的目标不得落到地板下",
+		)
+
+	var moving := _scenario.active_targets()[0] as Target
+	moving.motion = ScenarioDef.Motion.DRIFT
+	moving.speed = 20.0
+	moving.set("_dir", Vector3.DOWN)
+	moving._process(1.0)
+	_expect(
+		moving.global_position.y >= Target.minimum_center_height(moving.radius),
+		"三维运动后的目标不得穿入地板",
+	)
+	print("[OK] 目标生成与运动均受地面边界约束")
+
+
+# 场次以倒计时为生命周期。无论是否开启“换位重生”，连续打完初始靶机后
+# 都必须还有可射击目标；这个链路不能只靠“开局时数量正确”的测试覆盖。
+func _check_targets_keep_respawning() -> void:
+	for relocates in [true, false]:
+		var def := ScenarioDef.preset_flick()
+		def.duration = 30.0
+		def.target_count = 2
+		def.hits_to_kill = 1
+		def.respawn_on_hit = relocates
+		_main.start_session(def)
+		await _frames(3)
+
+		for shot in 8:
+			var target := _scenario.active_targets()[shot % def.target_count] as Target
+			var before := target.global_position
+			_expect(target.take_hit(), "单发击杀场景中命中应击毁目标")
+			_scenario.report_kill(target)
+			_expect(_scenario.running, "连续击毁后场次应继续到倒计时结束")
+			_expect(target.alive and target.visible, "击毁后应立即补回可射击目标")
+			if not relocates:
+				_expect(target.global_position.is_equal_approx(before), "关闭换位时目标应原地重生")
+
+		_expect(_scenario.active_targets().size() == def.target_count, "重生过程不应改变目标总数")
+		_expect(_scenario.stats.kills == 8, "连续击毁应完整计分")
+	print("[OK] 连续击毁后目标持续补充")
+
+
 func _check_round_finishes() -> void:
 	var def := ScenarioDef.preset_flick()
 	def.duration = SHORT_DURATION
@@ -79,6 +197,11 @@ func _check_round_finishes() -> void:
 	await _seconds(SHORT_DURATION + 0.4)
 	_expect(not _scenario.running, "到时后场次应停止")
 	_expect(not _player.active, "到时后玩家应停止，否则结算面板后面还在偷偷计分")
+	var results := _ui.get("_results") as ResultsPanel
+	var focus := get_viewport().gui_get_focus_owner()
+	_expect(focus != null and results.is_ancestor_of(focus), "结算页应自动取得手柄焦点")
+	await _tap_joy(JOY_BUTTON_A)
+	_expect(_scenario.running and _player.active, "结算页按 A 应立即再来一局")
 	print("[OK] 一局到时后正常结算")
 
 
@@ -88,12 +211,13 @@ func _check_settings_pause() -> void:
 	_main.start_session(def)
 	await _frames(15)
 
+	await _tap_joy(JOY_BUTTON_START)
+	await _frames(2)
 	var t0 := _scenario.elapsed()
 	var pos0: Array[Vector3] = []
 	for node in _scenario.active_targets():
 		pos0.append((node as Target).global_position)
 
-	_ui.set_settings_open(true)
 	await _frames(25)
 	_expect(not _player.active, "打开参数面板时玩家应暂停")
 	_expect(_scenario.paused, "打开参数面板时应冻结场次")
@@ -102,7 +226,7 @@ func _check_settings_pause() -> void:
 		var now: Vector3 = (_scenario.active_targets()[i] as Target).global_position
 		_expect(now.distance_to(pos0[i]) < 0.001, "菜单打开时靶机不应移动")
 
-	_ui.set_settings_open(false)
+	await _tap_joy(JOY_BUTTON_START)
 	await _frames(15)
 	_expect(_player.active, "关闭参数面板后玩家应恢复")
 	_expect(not _scenario.paused, "关闭参数面板后场次应解除冻结")
@@ -165,6 +289,36 @@ func _check_return_to_menu() -> void:
 func _expect(condition: bool, message: String) -> void:
 	if not condition:
 		_failures.append(message)
+
+
+func _joy_button(button: int) -> InputEventJoypadButton:
+	var event := InputEventJoypadButton.new()
+	event.button_index = button
+	event.pressed = true
+	return event
+
+
+func _tap_joy(button: int) -> void:
+	var press := _joy_button(button)
+	Input.parse_input_event(press)
+	await _frames(2)
+	var release := _joy_button(button)
+	release.pressed = false
+	Input.parse_input_event(release)
+	await _frames(2)
+
+
+func _tap_axis(axis: int, value: float) -> void:
+	var motion := InputEventJoypadMotion.new()
+	motion.axis = axis
+	motion.axis_value = value
+	Input.parse_input_event(motion)
+	await _frames(2)
+	motion = InputEventJoypadMotion.new()
+	motion.axis = axis
+	motion.axis_value = 0.0
+	Input.parse_input_event(motion)
+	await _frames(2)
 
 
 func _frames(n: int) -> void:

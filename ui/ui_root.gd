@@ -14,6 +14,7 @@ var _hud: HUD
 var _settings: SettingsPanel
 var _results: ResultsPanel
 var _in_session: bool = false
+var _return_to_results_after_settings: bool = false
 
 
 func _ready() -> void:
@@ -98,10 +99,16 @@ func set_settings_open(open: bool) -> void:
 		return
 	_settings.visible = open
 	if open:
+		_return_to_results_after_settings = _results.visible
 		_results.hide()
 		_settings.rebuild_all()
+		_settings.activate_controller_focus()
 		# 主菜单上打开设置时，菜单还在下面衬着；局内则 HUD 继续画准星没问题。
+	elif _return_to_results_after_settings and _in_session:
+		_return_to_results_after_settings = false
+		_results.show_for(_settings.scenario)
 	elif not _in_session:
+		_return_to_results_after_settings = false
 		_menu.show_home()
 	settings_toggled.emit(open)
 
@@ -118,12 +125,35 @@ func menu_go_home() -> void:
 	_menu.show_home()
 
 
+## 按当前最上层界面执行“返回”，供手柄 B 键使用。
+func controller_back() -> bool:
+	if _settings.visible:
+		set_settings_open(false)
+		return true
+	if _results.visible:
+		menu_requested.emit()
+		return true
+	return _menu.go_back()
+
+
+func controller_switch_settings_tab(step: int) -> bool:
+	if not _settings.visible:
+		return false
+	_settings.switch_tab(step)
+	return true
+
+
+func results_visible() -> bool:
+	return _results.visible
+
+
 func toggle_debug() -> void:
 	_hud.debug_visible = not _hud.debug_visible
 	_hud.queue_redraw()
 
 
 func show_results() -> void:
+	_return_to_results_after_settings = false
 	_results.show_for(_settings.scenario)
 
 
