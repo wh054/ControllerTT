@@ -2,11 +2,14 @@
 ##
 ##   godot --path . --resolution 1600x900 tools/shots.tscn
 ##
-## 会在项目根目录生成 shot_hud.png / shot_settings.png / shot_results.png。
+## 输出到 shots/ 目录。该目录下有 .gdignore，否则 Godot 会把这些 png 当作纹理资源
+## 导入，给每张图生成一个 .import 文件污染仓库。
 ##
 ## 之所以做成一个普通场景而不是 `--script` 脚本：`--script` 模式下自动加载的
 ## 单例不会被注册，App 会解析不到，整个项目都编译不过。
 extends Node
+
+const OUTPUT_DIR := "res://shots"
 
 const WARMUP_FRAMES := 70
 const SETTLE_FRAMES := 25
@@ -17,6 +20,7 @@ func _ready() -> void:
 
 
 func _capture_all() -> void:
+	DirAccess.make_dir_recursive_absolute(OUTPUT_DIR)
 	var main := (load("res://game/main.tscn") as PackedScene).instantiate()
 	add_child(main)
 	var ui: UIRoot = main.get_node("UI")
@@ -58,5 +62,5 @@ func _wait(frames: int) -> void:
 
 func _save(file_name: String) -> void:
 	var img := get_viewport().get_texture().get_image()
-	var err := img.save_png("res://%s" % file_name)
-	print("%s -> %s" % [file_name, "OK" if err == OK else "失败 %d" % err])
+	var err := img.save_png("%s/%s" % [OUTPUT_DIR, file_name])
+	print("shots/%s -> %s" % [file_name, "OK" if err == OK else "失败 %d" % err])
