@@ -40,6 +40,10 @@ var last_assist: AimAssist.Result = AimAssist.Result.new()
 var last_raw_look := Vector2.ZERO
 var last_move := Vector2.ZERO
 var ads: bool = false
+var _last_ads: bool = false
+
+var audio := AudioManager.new()
+var weapon_rig := WeaponRig.new()
 
 var _yaw: float = 0.0  ## 度，右为正
 var _pitch: float = 0.0  ## 度，上为正
@@ -50,10 +54,18 @@ var _beam_target: Target = null
 
 func _ready() -> void:
 	reader.pick_first_device()
+	add_child(audio)
+	if camera != null:
+		camera.add_child(weapon_rig)
 	_sync_config()
+	_sync_audio()
+	_update_weapon_rig()
 	App.profile_changed.connect(_sync_config)
 	App.assist_changed.connect(_sync_config)
 	App.video_changed.connect(_on_video_changed)
+	App.audio_changed.connect(_sync_audio)
+	App.weapon_visual_changed.connect(_update_weapon_rig)
+	App.scenario_changed.connect(_update_weapon_rig)
 	camera.fov = _current_base_vfov()
 	reset_pose()
 
@@ -61,6 +73,33 @@ func _ready() -> void:
 func _sync_config() -> void:
 	processor.profile = App.profile
 	assist.config = App.assist
+
+
+func _sync_audio() -> void:
+	if audio != null:
+		audio.volume = App.sfx_volume
+		audio.enabled = App.sfx_enabled
+
+
+func _update_weapon_rig() -> void:
+	if weapon_rig == null:
+		return
+	match App.weapon_visual:
+		AppState.WeaponVisualMode.HIDDEN:
+			weapon_rig.visible_weapon = false
+			weapon_rig.set_weapon(WeaponRig.WeaponType.NONE)
+		AppState.WeaponVisualMode.FORCE_M4:
+			weapon_rig.visible_weapon = true
+			weapon_rig.set_weapon(WeaponRig.WeaponType.M4)
+		AppState.WeaponVisualMode.FORCE_DEAGLE:
+			weapon_rig.visible_weapon = true
+			weapon_rig.set_weapon(WeaponRig.WeaponType.DEAGLE)
+		AppState.WeaponVisualMode.AUTO_BY_SCENARIO:
+			weapon_rig.visible_weapon = true
+			if App.scenario != null and App.scenario.weapon == ScenarioDef.Weapon.AUTO:
+				weapon_rig.set_weapon(WeaponRig.WeaponType.M4)
+			else:
+				weapon_rig.set_weapon(WeaponRig.WeaponType.DEAGLE)
 
 
 func _on_video_changed() -> void:
@@ -91,6 +130,7 @@ func reset_pose() -> void:
 	_beam_target = null
 	_fire_cooldown = 0.0
 	_was_firing = false
+	_update_weapon_rig()
 	_apply_rotation()
 
 
@@ -153,6 +193,8 @@ func _advance_look(rate_dps: Vector2, delta: float) -> void:
 		return
 	_yaw = wrapf(_yaw + rate_dps.x * delta, -180.0, 180.0)
 	_pitch = clampf(_pitch + rate_dps.y * delta, -PITCH_LIMIT, PITCH_LIMIT)
+	if weapon_rig != null:
+		weapon_rig.apply_look_sway(rate_dps.x, rate_dps.y)
 	_apply_rotation()
 
 
@@ -168,6 +210,13 @@ func _advance_fov(delta: float) -> void:
 	var ads_fov := _current_ads_vfov()
 	var target := ads_fov if ads else base
 	camera.fov = move_toward(camera.fov, target, absf(base - ads_fov) / FOV_BLEND_TIME * delta)
+	if weapon_rig != null:
+		var ads_factor := clampf((base - camera.fov) / maxf(0.1, base - ads_fov), 0.0, 1.0)
+		weapon_rig.set_ads_ratio(ads_factor)
+	if ads != _last_ads:
+		if ads and audio != null:
+			audio.play_ads()
+		_last_ads = ads
 
 
 func _advance_weapon(delta: float) -> void:
@@ -207,13 +256,28 @@ func _advance_beam(delta: float) -> void:
 
 
 func _shoot() -> void:
+	if weapon_rig != null:
+		weapon_rig.fire()
+	if audio != null:
+		if weapon_rig != null and weapon_rig.current_type == WeaponRig.WeaponType.DEAGLE:
+			audio.play_deagle_fire()
+		else:
+			audio.play_m4_fire()
+
 	var hit := _pick_target()
 	if stats != null:
 		stats.record_shot(hit != null)
 	if hit == null:
 		return
-	if hit.take_hit() and scenario != null:
-		scenario.report_kill(hit)
+
+	if audio != null:
+		audio.play_hit()
+
+	if hit.take_hit():
+		if audio != null:
+			audio.play_kill()
+		if scenario != null:
+			scenario.report_kill(hit)
 
 
 # 从准星射出一条射线，返回最近的靶机；没打中返回 null。

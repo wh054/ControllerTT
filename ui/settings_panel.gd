@@ -847,6 +847,26 @@ func _populate_video() -> void:
 		App.notify_video_changed()
 	, _video_box)
 
+	_section("枪械模型与音效 (Weapon Model & Audio)", _video_box)
+
+	# 枪模外观选择
+	_add(ParamRow.options("第一人称枪模外观", PackedStringArray(AppState.WEAPON_VISUAL_LABELS), App.weapon_visual, "自由选择手中所持第一人称 3D 枪械模型：根据训练场景自动匹配、强制手持 M4 突击步枪、强制手持沙漠之鹰 .50，或关闭枪模进行纯准星极简练枪。"), func(idx: int) -> void:
+		App.weapon_visual = idx as AppState.WeaponVisualMode
+		App.notify_weapon_visual_changed()
+	, _video_box)
+
+	# 音效开关
+	_add(ParamRow.options("音效系统", PackedStringArray(["开启 (真实枪声与击中音效)", "静音 (无音效)"]), 0 if App.sfx_enabled else 1, "开关射击音效、开镜音效、命中'叮'声与靶机击毁确认音。"), func(idx: int) -> void:
+		App.sfx_enabled = (idx == 0)
+		App.notify_audio_changed()
+	, _video_box)
+
+	# 音效音量
+	_add(ParamRow.slider("音效主音量", 0.0, 1.0, 0.05, App.sfx_volume, "", 2, "调节枪声与命中反馈音量的输出响度。"), func(val: float) -> void:
+		App.sfx_volume = val
+		App.notify_audio_changed()
+	, _video_box)
+
 
 func _build_bandwidth_card() -> PanelContainer:
 	var card := PanelContainer.new()

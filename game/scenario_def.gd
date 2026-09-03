@@ -109,7 +109,8 @@ static func preset_switching() -> ScenarioDef:
 	d.display_name = "目标切换"
 	d.description = "多个移动靶之间来回切换。追踪与甩枪的结合，"\
 		+ "也是检验辅助瞄准会不会锁错目标的场景。"
-	d.weapon = Weapon.SEMI
+	d.weapon = Weapon.AUTO
+	d.fire_rate = 9.0
 	d.target_count = 3
 	d.target_radius = 0.38
 	d.motion = Motion.STRAFE

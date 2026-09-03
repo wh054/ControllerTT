@@ -2,6 +2,7 @@
 ##
 ## 用单例而不是层层传参，是因为参数面板、玩家控制器、HUD 三处都要读同一份配置，
 ## 且面板上任何一次改动都要求立即生效——单例 + 信号是这里最短的路径。
+class_name AppState
 extends Node
 
 const VideoConfig = preload("res://core/video/video_config.gd")
@@ -10,6 +11,22 @@ signal profile_changed
 signal assist_changed
 signal scenario_changed
 signal video_changed
+signal weapon_visual_changed
+signal audio_changed
+
+enum WeaponVisualMode {
+	AUTO_BY_SCENARIO, # 自动（全自动为 M4，半自动/精度为沙鹰）
+	FORCE_M4,         # 强制使用 M4 突击步枪
+	FORCE_DEAGLE,     # 强制使用 沙漠之鹰 .50 AE
+	HIDDEN,           # 隐藏枪模（纯准星模式）
+}
+
+const WEAPON_VISUAL_LABELS := [
+	"根据场景自动 (连发场景M4 · 点射场景沙鹰)",
+	"强制手持 M4 突击步枪",
+	"强制手持 沙漠之鹰 .50 AE",
+	"隐藏枪模 (纯准星练枪)",
+]
 
 const PROFILE_PATH := "user://profile.tres"
 const ASSIST_PATH := "user://aim_assist.tres"
@@ -20,6 +37,10 @@ var profile: ControllerProfile
 var assist: AimAssistConfig
 var scenario: ScenarioDef
 var video: VideoConfig
+
+var weapon_visual: WeaponVisualMode = WeaponVisualMode.AUTO_BY_SCENARIO
+var sfx_volume: float = 0.85
+var sfx_enabled: bool = true
 
 
 func _ready() -> void:
@@ -71,6 +92,14 @@ func notify_scenario_changed() -> void:
 func notify_video_changed() -> void:
 	apply_video_hardware()
 	video_changed.emit()
+
+
+func notify_weapon_visual_changed() -> void:
+	weapon_visual_changed.emit()
+
+
+func notify_audio_changed() -> void:
+	audio_changed.emit()
 
 
 func apply_profile_preset(p: ControllerProfile) -> void:

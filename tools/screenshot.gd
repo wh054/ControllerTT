@@ -43,6 +43,16 @@ func _capture_all() -> void:
 	_save("shot_hud_bubbles.png")
 	ui.toggle_debug()
 
+	# M4 突击步枪持枪视角截图
+	main.start_session(ScenarioDef.preset_switching())
+	await _wait(SETTLE_FRAMES)
+	_save("shot_hud_m4.png")
+
+	# 沙漠之鹰重型手枪持枪视角截图
+	main.start_session(ScenarioDef.preset_flick())
+	await _wait(SETTLE_FRAMES)
+	_save("shot_hud_deagle.png")
+
 	ui.open_settings_tab(SettingsPanel.TAB_STICK)
 	await _wait(SETTLE_FRAMES)
 	_save("shot_settings_stick.png")
