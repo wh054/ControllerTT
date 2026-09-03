@@ -7,11 +7,11 @@
 class_name Player
 extends Node3D
 
+const VideoConfig = preload("res://core/video/video_config.gd")
+
 ## 俯仰角上下限，度。略小于 90 以免视角翻转。
 const PITCH_LIMIT := 89.0
 const EYE_HEIGHT := 1.7
-const BASE_FOV := 95.0
-const ADS_FOV := 52.0
 ## 开镜视场切换所需时间，秒。
 const FOV_BLEND_TIME := 0.12
 
@@ -53,7 +53,8 @@ func _ready() -> void:
 	_sync_config()
 	App.profile_changed.connect(_sync_config)
 	App.assist_changed.connect(_sync_config)
-	camera.fov = BASE_FOV
+	App.video_changed.connect(_on_video_changed)
+	camera.fov = _current_base_vfov()
 	reset_pose()
 
 
@@ -62,11 +63,29 @@ func _sync_config() -> void:
 	assist.config = App.assist
 
 
+func _on_video_changed() -> void:
+	if camera != null and not ads:
+		camera.fov = _current_base_vfov()
+	global_position.y = _current_eye_height()
+
+
+func _current_base_vfov() -> float:
+	return App.video.vertical_fov() if App.video != null else VideoConfig.hfov_to_vfov(103.0)
+
+
+func _current_ads_vfov() -> float:
+	return App.video.ads_vertical_fov() if App.video != null else VideoConfig.hfov_to_vfov(103.0 * 0.55)
+
+
+func _current_eye_height() -> float:
+	return App.video.eye_height if App.video != null else 1.7
+
+
 ## 回到场地中央并把视角摆正。重开训练时调用。
 func reset_pose() -> void:
 	_yaw = 0.0
 	_pitch = 0.0
-	global_position = Vector3(0.0, EYE_HEIGHT, 0.0)
+	global_position = Vector3(0.0, _current_eye_height(), 0.0)
 	processor.reset()
 	sampler.reset()
 	_beam_target = null
@@ -124,7 +143,7 @@ func _advance_movement(move: Vector2, delta: float) -> void:
 	var pos := global_position + world * move_speed * delta
 	global_position = Vector3(
 		clampf(pos.x, -arena_half, arena_half),
-		EYE_HEIGHT,
+		_current_eye_height(),
 		clampf(pos.z, -arena_half, arena_half),
 	)
 
@@ -145,8 +164,10 @@ func _apply_rotation() -> void:
 
 
 func _advance_fov(delta: float) -> void:
-	var target := ADS_FOV if ads else BASE_FOV
-	camera.fov = move_toward(camera.fov, target, absf(BASE_FOV - ADS_FOV) / FOV_BLEND_TIME * delta)
+	var base := _current_base_vfov()
+	var ads_fov := _current_ads_vfov()
+	var target := ads_fov if ads else base
+	camera.fov = move_toward(camera.fov, target, absf(base - ads_fov) / FOV_BLEND_TIME * delta)
 
 
 func _advance_weapon(delta: float) -> void:

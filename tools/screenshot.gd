@@ -28,6 +28,12 @@ func _capture_all() -> void:
 	await _wait(WARMUP_FRAMES)
 	_save("shot_menu.png")
 
+	var menu := ui.get("_menu") as MainMenu
+	menu._show_scenarios()
+	await _wait(SETTLE_FRAMES)
+	_save("shot_scenarios.png")
+	menu.show_home()
+
 	main.start_session(ScenarioDef.preset_tracking())
 	await _wait(SETTLE_FRAMES)
 	_save("shot_hud.png")
@@ -48,6 +54,14 @@ func _capture_all() -> void:
 	ui.open_settings_tab(SettingsPanel.TAB_SCENARIO)
 	await _wait(SETTLE_FRAMES)
 	_save("shot_settings_scenario.png")
+
+	ui.open_settings_tab(SettingsPanel.TAB_VIDEO)
+	await _wait(SETTLE_FRAMES)
+	_save("shot_settings_video.png")
+
+	ui.open_settings_tab(SettingsPanel.TAB_DATA)
+	await _wait(SETTLE_FRAMES)
+	_save("shot_settings_data.png")
 
 	ui.set_settings_open(false)
 	ui.show_results()

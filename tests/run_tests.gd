@@ -10,6 +10,7 @@ const SUITES := [
 	preload("res://tests/test_stick_processor.gd"),
 	preload("res://tests/test_aim_assist.gd"),
 	preload("res://tests/test_hit_test.gd"),
+	preload("res://tests/test_video_config.gd"),
 ]
 
 

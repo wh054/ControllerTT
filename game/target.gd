@@ -115,10 +115,8 @@ func _advance_motion(delta: float) -> void:
 				if absf(offset[axis]) > motion_range:
 					_dir[axis] = -_dir[axis]
 					offset[axis] = signf(offset[axis]) * motion_range
-			global_position = _origin + offset
-			var min_y := minimum_center_height(radius)
-			if global_position.y < min_y:
-				global_position.y = min_y
+			global_position = _keep_above_floor(_origin + offset)
+			if global_position.y <= minimum_center_height(radius):
 				_dir.y = absf(_dir.y)
 		_:
 			_maybe_change_direction(delta)
@@ -127,7 +125,7 @@ func _advance_motion(delta: float) -> void:
 			if absf(dx) > motion_range:
 				dx = signf(dx) * motion_range
 				_dir = -_dir
-			global_position = Vector3(_origin.x + dx, pos.y, pos.z)
+			global_position = _keep_above_floor(Vector3(_origin.x + dx, pos.y, pos.z))
 
 
 static func minimum_center_height(target_radius: float) -> float:
@@ -135,7 +133,7 @@ static func minimum_center_height(target_radius: float) -> float:
 
 
 func _keep_above_floor(pos: Vector3) -> Vector3:
-	pos.y = maxf(pos.y, minimum_center_height(radius))
+	pos.y = maxf(pos.y, minimum_center_height(radius) + 0.001)
 	return pos
 
 

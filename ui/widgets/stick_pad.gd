@@ -6,8 +6,8 @@
 class_name StickPad
 extends Control
 
-const TRAIL_LENGTH := 110
-const PADDING := 10.0
+const TRAIL_LENGTH := 120
+const PADDING := 12.0
 
 var deadzone: DeadzoneConfig
 var raw := Vector2.ZERO
@@ -18,7 +18,7 @@ var _trail: PackedVector2Array = PackedVector2Array()
 
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(180, 180)
+	custom_minimum_size = Vector2(200, 200)
 
 
 ## 每帧喂入一组采样。processed 为死区处理后的值。
@@ -43,31 +43,47 @@ func _draw() -> void:
 	if radius <= 4.0:
 		return
 
+	# 雷达底盘
 	draw_circle(center, radius, UITheme.BG)
 	draw_arc(center, radius, 0.0, TAU, 72, UITheme.OUTLINE, 1.0, true)
+	
+	# 刻度十字线
 	draw_line(Vector2(center.x - radius, center.y), Vector2(center.x + radius, center.y), UITheme.GRID, 1.0)
 	draw_line(Vector2(center.x, center.y - radius), Vector2(center.x, center.y + radius), UITheme.GRID, 1.0)
+	draw_arc(center, radius * 0.5, 0.0, TAU, 48, UITheme.GRID, 1.0, true)
 
 	_draw_deadzone(center, radius)
 	_draw_trail(center, radius)
 
-	draw_circle(center + raw * radius, 3.0, UITheme.MUTED)
-	draw_circle(center + processed * radius, 5.0, UITheme.ACCENT)
+	# 原始点与处理后点
+	var raw_pos := center + raw * radius
+	var proc_pos := center + processed * radius
+	if raw.length_squared() > 0.001:
+		draw_circle(raw_pos, 3.5, UITheme.MUTED * Color(1, 1, 1, 0.8))
+	if processed.length_squared() > 0.001:
+		draw_circle(proc_pos, 7.0, UITheme.ACCENT * Color(1, 1, 1, 0.35))
+		draw_circle(proc_pos, 4.5, UITheme.ACCENT)
+		draw_line(center, proc_pos, UITheme.ACCENT * Color(1, 1, 1, 0.4), 1.0)
 
 	var font := get_theme_default_font()
 	if font != null:
+		var pct := roundi(processed.length() * 100.0)
 		draw_string(
 			font, Vector2(6.0, size.y - 4.0),
-			"灰=原始  蓝=处理后", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, UITheme.MUTED,
+			"偏转: %d%%" % pct, HORIZONTAL_ALIGNMENT_LEFT, -1, 11,
+			UITheme.ACCENT if pct > 0 else UITheme.MUTED,
+		)
+		draw_string(
+			font, Vector2(size.x - 72.0, size.y - 4.0),
+			"灰=原 蓝=效", HORIZONTAL_ALIGNMENT_RIGHT, -1, 10, UITheme.MUTED,
 		)
 
 
 # 死区的形状要如实画出来：轴向死区是方的，径向是圆的。
-# 使用者能看到自己在对角方向究竟被砍掉了多少行程。
 func _draw_deadzone(center: Vector2, radius: float) -> void:
 	if deadzone == null:
 		return
-	var color := UITheme.ACCENT_WARM * Color(1, 1, 1, 0.5)
+	var color := UITheme.ACCENT_WARM * Color(1, 1, 1, 0.45)
 	if deadzone.shape == DeadzoneConfig.Shape.AXIAL:
 		for r: float in [deadzone.inner, deadzone.outer]:
 			var half := radius * r
@@ -80,12 +96,13 @@ func _draw_deadzone(center: Vector2, radius: float) -> void:
 func _draw_trail(center: Vector2, radius: float) -> void:
 	if _trail.size() < 2:
 		return
-	# 越旧越淡，这样一眼能看出轨迹的方向。
+	# 越旧越淡
 	for i in range(1, _trail.size()):
 		var t := float(i) / _trail.size()
 		draw_line(
 			center + _trail[i - 1] * radius,
 			center + _trail[i] * radius,
-			UITheme.GOOD * Color(1, 1, 1, t * 0.55),
-			1.0,
+			UITheme.GOOD * Color(1, 1, 1, t * 0.65),
+			1.5,
 		)
+

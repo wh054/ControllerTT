@@ -1,8 +1,11 @@
 ## 训练时的抬头显示。
 ##
-## 除了常规的准星与成绩，这里还实时显示**辅助瞄准三种机制各自的生效强度**。
-## 这是本工具的训练意图所在：使用者应当能当场看到"刚才那一枪，是我自己压上去的，
-## 还是跟枪把准星带过去的"。把辅助做成一个黑箱就失去了训练价值。
+## 现代高科技 FPS 抬头显示：
+## 1. 顶部场景与计时药丸，大号主成绩指标；
+## 2. 精准双层准星，辅助生效与命中实时反馈；
+## 3. 左下角摇杆运动雷达与手柄状态；
+## 4. 右下角辅助瞄准三机制实时动态电平仪表盘；
+## 5. 底部中央常驻手柄快捷键提醒胶囊。
 class_name HUD
 extends Control
 
@@ -26,8 +29,6 @@ var _device_label: Label
 
 
 func _ready() -> void:
-	# 必须用 set_anchors_and_offsets_preset：只设锚点的话偏移仍是旧值，
-	# 控件会缩成最小尺寸留在左上角。这个坑在 CanvasLayer 下的 Control 上尤其容易踩。
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_build()
@@ -46,22 +47,21 @@ func _refresh_text() -> void:
 	var def := App.scenario
 	var stats := scenario.stats
 
-	_scenario_label.text = def.display_name
+	_scenario_label.text = "🎯 " + def.display_name
 	_timer_label.text = "%0.1f s" % scenario.time_left()
 	_primary_label.text = def.primary_metric_label()
 
 	if def.weapon == ScenarioDef.Weapon.BEAM:
 		_primary_value.text = "%d%%" % roundi(stats.time_on_target_ratio() * 100.0)
-		# 光束要按住扳机才计时，不提示的话新手会打完一局拿到 0% 还不知道为什么。
-		var fire_hint := "" if player.reader.firing() else "\n按住右扳机 / 鼠标左键 开火"
-		_metrics.text = "在靶 %.1f s / %.1f s\n平均偏转 %.2f\n微操区占比 %d%%%s" % [
+		var fire_hint := "" if player.reader.firing() else "\n⚠️ 按住右扳机 / 鼠标左键 开火"
+		_metrics.text = "在靶 %.1f s / 总计 %.1f s\n平均偏转 %.2f\n微操区占比 %d%%%s" % [
 			stats.time_on_target, stats.elapsed,
 			stats.avg_deflection(), roundi(stats.fine_control_ratio() * 100.0),
 			fire_hint,
 		]
 	else:
 		_primary_value.text = "%d%%" % roundi(stats.accuracy() * 100.0)
-		_metrics.text = "击杀 %d    射击 %d\n每秒击杀 %.2f\n平均转移 %.0f ms\n微操区占比 %d%%" % [
+		_metrics.text = "击杀 %d  /  射击 %d\n每秒击杀 %.2f\n平均转移 %.0f ms\n微操区占比 %d%%" % [
 			stats.kills, stats.shots, stats.kills_per_second(),
 			stats.avg_reaction() * 1000.0, roundi(stats.fine_control_ratio() * 100.0),
 		]
@@ -73,9 +73,9 @@ func _refresh_text() -> void:
 func _assist_text() -> String:
 	var cfg := App.assist
 	if not cfg.enabled or cfg.master_strength <= 0.0:
-		return "辅助瞄准：关闭"
+		return "辅助瞄准：已关闭"
 	var r := player.last_assist
-	var lines := PackedStringArray(["辅助瞄准 · %s" % cfg.config_name])
+	var lines := PackedStringArray(["⚡ 辅助瞄准 · %s" % cfg.config_name])
 	if cfg.slowdown_enabled:
 		lines.append("减速 %s %.2f" % [_bar(r.slowdown_factor), r.turn_scale])
 	if cfg.rotation_enabled:
@@ -83,14 +83,14 @@ func _assist_text() -> String:
 	if cfg.magnetism_enabled:
 		lines.append("磁吸 %s" % _bar(r.magnetism_factor))
 	if not r.is_active():
-		lines.append("（无目标进入气泡）")
+		lines.append("（等待目标进入气泡）")
 	return "\n".join(lines)
 
 
 func _device_text() -> String:
 	if player.reader.connected():
-		return player.reader.device_name()
-	return "未检测到手柄\n方向键模拟右摇杆 · WASD 模拟左摇杆"
+		return "🎮 " + player.reader.device_name()
+	return "⌨️ 键盘模拟模式\n方向键模拟右摇杆 · WASD 模拟左摇杆"
 
 
 static func _bar(v: float) -> String:
@@ -106,19 +106,18 @@ func _draw() -> void:
 
 
 func _draw_crosshair(center: Vector2) -> void:
-	# 准星变绿表示辅助**正在实际干预**，而不仅仅是锁定了目标。
-	var color := UITheme.GOOD if (player != null and player.last_assist.has_effect()) else UITheme.TEXT
-	# 先描一圈深色再画亮线，否则准星压在浅色墙面上会看不见。
+	var assist_active := (player != null and player.last_assist.has_effect())
+	var color := UITheme.GOOD if assist_active else UITheme.TEXT
+	
+	# 外层深色描边 + 内层发光准星
 	for pass_index in 2:
 		var width := 3.5 if pass_index == 0 else 1.6
-		var c := Color(0, 0, 0, 0.75) if pass_index == 0 else color
+		var c := Color(0, 0, 0, 0.85) if pass_index == 0 else color
 		for dir: Vector2 in [Vector2.RIGHT, Vector2.LEFT, Vector2.UP, Vector2.DOWN]:
 			draw_line(center + dir * CROSSHAIR_GAP, center + dir * CROSSHAIR_SIZE, c, width, true)
 	draw_circle(center, 1.5, color)
 
 
-# 气泡是以**准星**为中心定义的角度范围，因此画在屏幕正中而不是画在目标身上。
-# 把角度换算成像素需要焦距：f = (视口高/2) / tan(垂直视场/2)。
 func _draw_assist_bubbles(center: Vector2) -> void:
 	var cfg := App.assist
 	if not cfg.enabled or player.camera == null:
@@ -145,36 +144,86 @@ func _draw_assist_bubbles(center: Vector2) -> void:
 
 
 func _build() -> void:
+	# 左上角卡片：场景与计时
 	var top_left := _corner(false, false, 320)
-	_scenario_label = UITheme.label("", 22, UITheme.TEXT)
-	_timer_label = UITheme.label("", 30, UITheme.ACCENT)
-	top_left.add_child(_scenario_label)
-	top_left.add_child(_timer_label)
+	var tl_frame := PanelContainer.new()
+	tl_frame.add_theme_stylebox_override("panel", UITheme.panel_style(UITheme.PANEL_SOFT, 8, UITheme.OUTLINE, 1, 12))
+	top_left.add_child(tl_frame)
+	
+	var tl_box := VBoxContainer.new()
+	tl_box.add_theme_constant_override("separation", 4)
+	tl_frame.add_child(tl_box)
+	_scenario_label = UITheme.label("", 16, UITheme.TEXT)
+	_timer_label = UITheme.label("", 28, UITheme.ACCENT)
+	tl_box.add_child(_scenario_label)
+	tl_box.add_child(_timer_label)
 
-	var top_right := _corner(true, false, 260)
-	_primary_label = _right_label("", 14, UITheme.MUTED)
-	_primary_value = _right_label("", 34, UITheme.GOOD)
-	_metrics = _right_label("", 13, UITheme.MUTED)
-	top_right.add_child(_primary_label)
-	top_right.add_child(_primary_value)
-	top_right.add_child(_metrics)
+	# 右上角卡片：主成绩与详细战术数据
+	var top_right := _corner(true, false, 280)
+	var tr_frame := PanelContainer.new()
+	tr_frame.add_theme_stylebox_override("panel", UITheme.panel_style(UITheme.PANEL_SOFT, 8, UITheme.OUTLINE, 1, 12))
+	top_right.add_child(tr_frame)
+	
+	var tr_box := VBoxContainer.new()
+	tr_box.add_theme_constant_override("separation", 3)
+	tr_frame.add_child(tr_box)
+	_primary_label = _right_label("", 13, UITheme.MUTED)
+	_primary_value = _right_label("", 32, UITheme.GOOD)
+	_metrics = _right_label("", 12, UITheme.TEXT_SUB)
+	tr_box.add_child(_primary_label)
+	tr_box.add_child(_primary_value)
+	tr_box.add_child(_metrics)
 
-	var bottom_left := _corner(false, true, 250)
+	# 左下角：右摇杆实时雷达与手柄状态
+	var bottom_left := _corner(false, true, 260)
+	var bl_frame := PanelContainer.new()
+	bl_frame.add_theme_stylebox_override("panel", UITheme.panel_style(UITheme.PANEL_SOFT, 8, UITheme.OUTLINE, 1, 10))
+	bottom_left.add_child(bl_frame)
+	
+	var bl_box := VBoxContainer.new()
+	bl_box.add_theme_constant_override("separation", 6)
+	bl_frame.add_child(bl_box)
+	
 	_stick = StickPad.new()
-	_stick.custom_minimum_size = Vector2(150, 150)
-	_stick.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	bottom_left.add_child(_stick)
-	bottom_left.add_child(UITheme.label("右摇杆", 12, UITheme.MUTED))
+	_stick.custom_minimum_size = Vector2(170, 170)
+	_stick.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	bl_box.add_child(_stick)
+	
 	_device_label = UITheme.label("", 11, UITheme.MUTED)
 	_device_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	bottom_left.add_child(_device_label)
+	bl_box.add_child(_device_label)
 
-	var bottom_right := _corner(true, true, 300)
+	# 右下角：辅助瞄准 3 机制实时动态监测
+	var bottom_right := _corner(true, true, 320)
+	var br_frame := PanelContainer.new()
+	br_frame.add_theme_stylebox_override("panel", UITheme.panel_style(UITheme.PANEL_SOFT, 8, UITheme.OUTLINE, 1, 12))
+	bottom_right.add_child(br_frame)
+	
+	var br_box := VBoxContainer.new()
+	br_box.add_theme_constant_override("separation", 6)
+	br_frame.add_child(br_box)
+	
 	_assist_label = _right_label("", 13, UITheme.TEXT)
-	bottom_right.add_child(_assist_label)
-	bottom_right.add_child(_right_label(
-		"Start / Esc 参数面板    Y / R 重开    F1 辅助气泡", 11, UITheme.MUTED,
-	))
+	br_box.add_child(_assist_label)
+
+	# 底部中央：手柄快捷键提醒
+	var bottom_center := HBoxContainer.new()
+	bottom_center.anchor_left = 0.5
+	bottom_center.anchor_right = 0.5
+	bottom_center.anchor_top = 1.0
+	bottom_center.anchor_bottom = 1.0
+	bottom_center.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	bottom_center.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	bottom_center.offset_bottom = -20
+	bottom_center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(bottom_center)
+	
+	var prompt_hints := UITheme.button_hints([
+		["Start", "暂停调参"],
+		["Y", "快速重开"],
+		["F1", "视野气泡"],
+	])
+	bottom_center.add_child(prompt_hints)
 
 
 func _right_label(text: String, size: int, color: Color) -> Label:
@@ -183,12 +232,10 @@ func _right_label(text: String, size: int, color: Color) -> Label:
 	return l
 
 
-# 用显式的锚点加偏移把容器钉在某个角上。
-# 上下方向让偏移相等、由 grow_vertical 决定往哪边长，这样内容行数变化时不会跑位。
 func _corner(right: bool, bottom: bool, width: float) -> VBoxContainer:
-	const MARGIN := Vector2(22.0, 18.0)
+	const MARGIN := Vector2(24.0, 20.0)
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 2)
+	box.add_theme_constant_override("separation", 4)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(box)
 
@@ -213,3 +260,4 @@ func _corner(right: bool, bottom: bool, width: float) -> VBoxContainer:
 	box.offset_bottom = vy
 	box.grow_vertical = Control.GROW_DIRECTION_BEGIN if bottom else Control.GROW_DIRECTION_END
 	return box
+

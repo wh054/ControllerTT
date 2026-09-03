@@ -8,9 +8,9 @@ extends Control
 
 signal curve_edited
 
-const SAMPLES := 96
+const SAMPLES := 100
 const HANDLE_RADIUS := 7.0
-const PADDING := 26.0
+const PADDING := 30.0
 
 var curve: ResponseCurve
 ## 当前摇杆偏转量 0..1，用于画实时游标。
@@ -22,7 +22,7 @@ var _dragging: int = -1
 
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(300, 220)
+	custom_minimum_size = Vector2(320, 240)
 
 
 func set_live(x: float) -> void:
@@ -42,6 +42,7 @@ func _draw() -> void:
 	if plot.size.x <= 4 or plot.size.y <= 4:
 		return
 
+	# 背景底板与网格
 	draw_rect(plot, UITheme.BG, true)
 	_draw_grid(plot)
 	_draw_reference(plot)
@@ -66,13 +67,13 @@ func _draw_grid(plot: Rect2) -> void:
 func _draw_reference(plot: Rect2) -> void:
 	var a := _to_px(plot, 0.0, 0.0)
 	var b := _to_px(plot, 1.0, 1.0)
-	var steps := 28
+	var steps := 32
 	for i in steps:
 		if i % 2 == 1:
 			continue
 		var t0 := float(i) / steps
 		var t1 := float(i + 1) / steps
-		draw_line(a.lerp(b, t0), a.lerp(b, t1), UITheme.MUTED, 1.0)
+		draw_line(a.lerp(b, t0), a.lerp(b, t1), UITheme.MUTED * Color(1, 1, 1, 0.5), 1.0)
 
 
 func _draw_curve(plot: Rect2) -> void:
@@ -80,6 +81,10 @@ func _draw_curve(plot: Rect2) -> void:
 	for i in SAMPLES + 1:
 		var x := float(i) / SAMPLES
 		pts.append(_to_px(plot, x, curve.evaluate(x)))
+	
+	# 发光底层
+	draw_polyline(pts, UITheme.ACCENT * Color(1, 1, 1, 0.3), 4.0, true)
+	# 主曲线
 	draw_polyline(pts, UITheme.ACCENT, 2.0, true)
 
 
@@ -99,9 +104,10 @@ func _draw_live(plot: Rect2) -> void:
 		return
 	var y := curve.evaluate(live_x)
 	var p := _to_px(plot, live_x, y)
-	draw_line(Vector2(p.x, plot.end.y), p, UITheme.GOOD * Color(1, 1, 1, 0.45), 1.0)
-	draw_line(Vector2(plot.position.x, p.y), p, UITheme.GOOD * Color(1, 1, 1, 0.45), 1.0)
-	draw_circle(p, 5.0, UITheme.GOOD)
+	draw_line(Vector2(p.x, plot.end.y), p, UITheme.GOOD * Color(1, 1, 1, 0.4), 1.0)
+	draw_line(Vector2(plot.position.x, p.y), p, UITheme.GOOD * Color(1, 1, 1, 0.4), 1.0)
+	draw_circle(p, 7.0, UITheme.GOOD * Color(1, 1, 1, 0.35))
+	draw_circle(p, 4.5, UITheme.GOOD)
 
 
 func _draw_axis_labels(plot: Rect2) -> void:
@@ -113,10 +119,17 @@ func _draw_axis_labels(plot: Rect2) -> void:
 		"摇杆偏转 →", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, UITheme.MUTED,
 	)
 	draw_string(
-		font, Vector2(plot.end.x - 96.0, plot.position.y + 14.0),
+		font, Vector2(plot.end.x - 90.0, plot.position.y + 14.0),
 		"↑ 转速输出", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, UITheme.MUTED,
 	)
-	if curve.type == ResponseCurve.Type.BEZIER and editable:
+	if live_x > 0.001:
+		var y := curve.evaluate(live_x)
+		var val_str := "输入: %.2f  输出: %.2f" % [live_x, y]
+		draw_string(
+			font, Vector2(plot.position.x + 6.0, plot.position.y + 14.0),
+			val_str, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, UITheme.GOOD,
+		)
+	elif curve.type == ResponseCurve.Type.BEZIER and editable:
 		draw_string(
 			font, Vector2(plot.position.x + 6.0, plot.end.y - 8.0),
 			"拖动橙色控制点调整曲线", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, UITheme.MUTED,
@@ -154,7 +167,6 @@ func _gui_input(event: InputEvent) -> void:
 			return
 		var p1 := _to_px(plot, curve.bezier_p1.x, curve.bezier_p1.y)
 		var p2 := _to_px(plot, curve.bezier_p2.x, curve.bezier_p2.y)
-		# 两点重叠时优先抓离鼠标更近的那个。
 		if mb.position.distance_to(p1) <= mb.position.distance_to(p2):
 			_dragging = 0 if mb.position.distance_to(p1) < HANDLE_RADIUS * 2.2 else -1
 		else:
@@ -169,3 +181,4 @@ func _gui_input(event: InputEvent) -> void:
 		curve_edited.emit()
 		queue_redraw()
 		accept_event()
+

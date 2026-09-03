@@ -6,12 +6,15 @@
 class_name SettingsPanel
 extends Control
 
+const VideoConfig = preload("res://core/video/video_config.gd")
+
 signal menu_requested
 
 const TAB_STICK := 0
 const TAB_ASSIST := 1
 const TAB_SCENARIO := 2
-const TAB_DATA := 3
+const TAB_VIDEO := 3
+const TAB_DATA := 4
 const _NAV_INITIAL_DELAY := 0.34
 const _NAV_REPEAT_INTERVAL := 0.09
 const _STICK_NAV_THRESHOLD := 0.65
@@ -24,6 +27,7 @@ var _tabs: TabContainer
 var _stick_box: VBoxContainer
 var _assist_box: VBoxContainer
 var _scenario_box: VBoxContainer
+var _video_box: VBoxContainer
 var _data_box: VBoxContainer
 var _menu_btn: Button
 var _save_btn: Button
@@ -33,6 +37,8 @@ var _curve_graph: CurveGraph
 var _stick_pad: StickPad
 var _histogram: Histogram
 var _data_text: Label
+var _bandwidth_text: Label
+var _bandwidth_alert: Label
 var _held_nav := Vector2i.ZERO
 var _stick_nav := Vector2.ZERO
 var _nav_repeat_left := 0.0
@@ -81,6 +87,16 @@ func _input(event: InputEvent) -> void:
 			JOY_BUTTON_DPAD_RIGHT:
 				direction = Vector2i.RIGHT if button.pressed else Vector2i.ZERO
 				relevant = true
+			JOY_BUTTON_X:
+				if button.pressed:
+					_reset_btn.pressed.emit()
+					get_viewport().set_input_as_handled()
+					return
+			JOY_BUTTON_Y:
+				if button.pressed:
+					_save_btn.pressed.emit()
+					get_viewport().set_input_as_handled()
+					return
 	elif event is InputEventJoypadMotion:
 		var motion := event as InputEventJoypadMotion
 		if motion.axis == JOY_AXIS_LEFT_X:
@@ -136,6 +152,7 @@ func rebuild_all() -> void:
 	_populate_stick()
 	_populate_assist()
 	_populate_scenario()
+	_populate_video()
 	_populate_data()
 
 
@@ -145,29 +162,37 @@ func rebuild_all() -> void:
 
 func _build_frame() -> void:
 	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.55)
+	dim.color = UITheme.BG_TRANSPARENT
 	add_child(dim)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 	var frame := PanelContainer.new()
-	frame.add_theme_stylebox_override("panel", UITheme.panel_style(UITheme.PANEL, 10))
+	frame.add_theme_stylebox_override("panel", UITheme.panel_style(UITheme.PANEL, 10, UITheme.OUTLINE, 1, 16))
 	add_child(frame)
 	frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	frame.offset_left = 48
-	frame.offset_top = 32
+	frame.offset_top = 28
 	frame.offset_right = -48
-	frame.offset_bottom = -32
+	frame.offset_bottom = -28
 
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", 10)
 	frame.add_child(root)
 
 	var header := HBoxContainer.new()
-	header.add_child(UITheme.label("手柄摇杆训练器 · 参数", 20, UITheme.TEXT))
+	header.add_theme_constant_override("separation", 14)
+	header.add_child(UITheme.label("⚙️ 参数调优控制台", 20, UITheme.TEXT))
+	header.add_child(UITheme.tag_badge("实时热更新 · 边调边试", UITheme.GOOD))
+	
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(spacer)
-	header.add_child(UITheme.label("LB / RB 切页　↑↓ 选项　←→ 调值　A 确认　B 返回", 12, UITheme.MUTED))
+	
+	var tab_hint := UITheme.button_hints([
+		["LB", ""],
+		["RB", "切换分页"],
+	])
+	header.add_child(tab_hint)
 	root.add_child(header)
 
 	_tabs = TabContainer.new()
@@ -179,7 +204,8 @@ func _build_frame() -> void:
 	_stick_box = _add_tab("摇杆参数")
 	_assist_box = _add_tab("辅助瞄准")
 	_scenario_box = _add_tab("训练场景")
-	_data_box = _add_tab("数据")
+	_video_box = _add_tab("画面/视频")
+	_data_box = _add_tab("数据监控")
 
 	root.add_child(_build_footer())
 
@@ -196,18 +222,24 @@ func _add_tab(title: String) -> VBoxContainer:
 	_tabs.add_child(scroll)
 
 	# 左右各放一个可伸缩的空白把内容列挤到中间。
-	var lane := HBoxContainer.new()
-	lane.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(lane)
-	lane.add_child(_flex_spacer())
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.add_child(row)
+
+	var left_flex := Control.new()
+	left_flex.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(left_flex)
 
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 7)
 	box.custom_minimum_size.x = CONTENT_WIDTH
-	box.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	lane.add_child(box)
+	box.add_theme_constant_override("separation", 10)
+	row.add_child(box)
 
-	lane.add_child(_flex_spacer())
+	var right_flex := Control.new()
+	right_flex.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(right_flex)
+
 	return box
 
 
@@ -220,15 +252,15 @@ func _flex_spacer() -> Control:
 
 func _build_footer() -> Control:
 	var bar := HBoxContainer.new()
-	bar.add_theme_constant_override("separation", 8)
+	bar.add_theme_constant_override("separation", 10)
 
 	_save_btn = Button.new()
-	_save_btn.text = "保存配置"
+	_save_btn.text = "💾 保存配置 (Y)"
 	_save_btn.pressed.connect(App.save_all)
 	bar.add_child(_save_btn)
 
 	_reset_btn = Button.new()
-	_reset_btn.text = "全部恢复默认"
+	_reset_btn.text = "🔄 全部恢复默认 (X)"
 	_reset_btn.pressed.connect(func() -> void:
 		App.apply_profile_preset(ControllerProfile.preset_cod_standard())
 		App.apply_assist_preset(AimAssistConfig.preset_off())
@@ -237,7 +269,7 @@ func _build_footer() -> Control:
 	bar.add_child(_reset_btn)
 
 	_menu_btn = Button.new()
-	_menu_btn.text = "返回主菜单"
+	_menu_btn.text = "🚪 返回主菜单 (B)"
 	_menu_btn.visible = false
 	_menu_btn.pressed.connect(func() -> void: menu_requested.emit())
 	bar.add_child(_menu_btn)
@@ -246,9 +278,14 @@ func _build_footer() -> Control:
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bar.add_child(spacer)
 
-	bar.add_child(UITheme.label(
-		"配置保存在 user:// 下，下次启动自动载入", 11, UITheme.MUTED,
-	))
+	var footer_hints := UITheme.button_hints([
+		["D-Pad", "选择/调节"],
+		["A", "切换/确认"],
+		["X", "恢复默认"],
+		["Y", "保存配置"],
+		["B", "返回"],
+	])
+	bar.add_child(footer_hints)
 	return bar
 
 
@@ -692,30 +729,201 @@ func _populate_scenario() -> void:
 
 
 # ---------------------------------------------------------------------------
-# 分页四：数据
+# 分页四：画面/视频设置
+# ---------------------------------------------------------------------------
+
+func _populate_video() -> void:
+	_clear(_video_box)
+	var v := App.video
+
+	# 顶部常用竞技预设栏
+	var preset_names := PackedStringArray(["103° 经典竞技 (16:9)", "110° 宽视角 (高机动)", "90° 常规视野 (稳重)"])
+	_video_box.add_child(UITheme.preset_bar(preset_names, func(i: int) -> void:
+		match i:
+			0:
+				v.fov = 103.0
+			1:
+				v.fov = 110.0
+			2:
+				v.fov = 90.0
+		App.notify_video_changed()
+		_populate_video()
+	))
+	_video_box.add_child(UITheme.hint(
+		"采用现代 FPS 严格的 16:9 水平 FOV 标定与 expand 扩展视口，彻底消除画面拉伸畸变与鱼眼现象。"
+	))
+
+	_section("视场角与透视 (FOV & Perspective)", _video_box)
+
+	# 水平视场角滑块
+	_add(ParamRow.slider("水平视场角", 60.0, 120.0, 1.0, v.fov, " °", 0, "以 16:9 为基准标定的水平 FOV。Apex/OW/COD 竞技推荐 103°。自动换算真实垂直视场，还原自然纵深。"), func(val: float) -> void:
+		v.fov = val
+		App.notify_video_changed()
+	, _video_box)
+
+	# 开镜视场缩放
+	_add(ParamRow.slider("开镜视场比例", 0.3, 0.9, 0.05, v.ads_fov_ratio, " x", 2, "按住瞄准键（LT / 鼠标右键）时的视场缩放比。0.55 即开镜后视角约为腰射的 55%。"), func(val: float) -> void:
+		v.ads_fov_ratio = val
+		App.notify_video_changed()
+	, _video_box)
+
+	# 视线高度
+	_add(ParamRow.slider("视线高度", 1.4, 2.0, 0.05, v.eye_height, " m", 2, "第一人称摄像机相对地面的基准高度。1.7m 为人体工程学站姿眼高，直接决定与靶机之间的俯仰透视关系。"), func(val: float) -> void:
+		v.eye_height = val
+		App.notify_video_changed()
+	, _video_box)
+
+	_section("显示输出规格与视频带宽 (Display Output & Bandwidth)", _video_box)
+
+	var supp_resolutions := VideoConfig.get_supported_resolutions()
+	var res_labels := VideoConfig.get_resolution_labels(supp_resolutions)
+	var supp_rates := VideoConfig.get_supported_refresh_rates()
+	var hz_labels := VideoConfig.get_refresh_rate_labels(supp_rates)
+	var spec_presets := VideoConfig.get_supported_spec_presets()
+
+	# 1. 硬件自适应规格预设（严格只显示当前显示器支持的规格，不支持的不出现）
+	var spec_preset_names := PackedStringArray()
+	for p in spec_presets:
+		spec_preset_names.append(p.label)
+
+	_video_box.add_child(UITheme.preset_bar(spec_preset_names, func(i: int) -> void:
+		v.apply_spec_dict(spec_presets[i])
+		App.notify_video_changed()
+		_populate_video()
+	))
+
+	# 2. 显示模式
+	_add(ParamRow.options("显示模式", PackedStringArray(["窗口化", "无边框全屏", "独占全屏"]), v.display_mode, "窗口化方便多任务调参，无边框全屏与独占全屏可带来最沉浸的游戏体验与稳定帧率。"), func(idx: int) -> void:
+		v.display_mode = idx as VideoConfig.DisplayMode
+		App.notify_video_changed()
+		_refresh_bandwidth_card()
+	, _video_box)
+
+	# 3. 输出分辨率（动态过滤：超出显示器物理尺寸的选项不出现）
+	var cur_res := v.current_resolution()
+	var cur_res_idx := supp_resolutions.find(cur_res)
+	if cur_res_idx < 0:
+		cur_res_idx = supp_resolutions.size() - 1
+
+	_add(ParamRow.options("输出分辨率", res_labels, cur_res_idx, "仅列出当前连接显示器物理支持的分辨率（杜绝超频黑屏与画面失真）。"), func(idx: int) -> void:
+		v.set_resolution(supp_resolutions[idx])
+		App.notify_video_changed()
+		_refresh_bandwidth_card()
+	, _video_box)
+
+	# 4. 屏幕物理刷新率（动态过滤：高刷不可达的物理选项不出现）
+	var cur_hz_target := roundi(v.target_refresh_rate()) if v.target_hz > 0 else 0
+	var cur_hz_idx := supp_rates.find(cur_hz_target)
+	if cur_hz_idx < 0:
+		cur_hz_idx = 0
+
+	_add(ParamRow.options("屏幕物理刷新率", hz_labels, cur_hz_idx, "仅显示当前硬件链路支持的刷新率规格，杜绝不可达选项。"), func(idx: int) -> void:
+		v.set_refresh_rate(supp_rates[idx])
+		App.notify_video_changed()
+		_refresh_bandwidth_card()
+	, _video_box)
+
+	# 5. 视频传输带宽与接口线缆瓶颈卡片
+	_video_box.add_child(_build_bandwidth_card())
+	_refresh_bandwidth_card()
+
+	_section("性能与延迟优化 (Performance & Latency)", _video_box)
+
+	# 垂直同步
+	_add(ParamRow.options("垂直同步", PackedStringArray(["关闭 (最低输入延迟 · 竞技推荐)", "开启 (消除画面撕裂)", "自适应 (动态帧率匹配)"]), v.vsync, "建议保持【关闭】。垂直同步会强制对齐刷新周期，产生 1~2 帧（16~32ms）的严重输入延迟，影响摇杆微操肌肉记忆。"), func(idx: int) -> void:
+		v.vsync = idx as VideoConfig.VSyncMode
+		App.notify_video_changed()
+	, _video_box)
+
+	# 最大帧率
+	_add(ParamRow.options("最大帧率上限", PackedStringArray(VideoConfig.FPS_LABELS), v.max_fps_index, "限制引擎渲染帧率或保持无限制。更高的帧率能降低输入端采样轮询延迟与视角跟手感。"), func(idx: int) -> void:
+		v.max_fps_index = idx
+		App.notify_video_changed()
+	, _video_box)
+
+	# 3D 抗锯齿
+	_add(ParamRow.options("3D 抗锯齿", PackedStringArray(["关闭 (最高帧率)", "MSAA 2X (推荐平衡)", "MSAA 4X (高质量)", "MSAA 8X (极致画质)"]), v.msaa, "平滑靶机边缘锯齿。弱显卡或追求极限帧率时可关闭；主流配置推荐保持 2X。"), func(idx: int) -> void:
+		v.msaa = idx as VideoConfig.AntiAliasing
+		App.notify_video_changed()
+	, _video_box)
+
+
+func _build_bandwidth_card() -> PanelContainer:
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", UITheme.panel_style(UITheme.PANEL_SOFT, 8, UITheme.OUTLINE, 1, 14))
+	
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 6)
+	card.add_child(vbox)
+
+	_bandwidth_text = UITheme.label("", 13, UITheme.TEXT)
+	_bandwidth_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(_bandwidth_text)
+
+	_bandwidth_alert = UITheme.label("", 13, UITheme.ACCENT_WARM)
+	_bandwidth_alert.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bandwidth_alert.visible = false
+	vbox.add_child(_bandwidth_alert)
+
+	return card
+
+
+func _refresh_bandwidth_card() -> void:
+	if _bandwidth_text == null:
+		return
+	var v := App.video
+	var res := v.current_resolution()
+	var hz := v.target_refresh_rate()
+	var info := VideoConfig.bandwidth_info(res, hz)
+
+	var lines := PackedStringArray([
+		"🖥️ 当前输出链路规格： %d × %d @ %.0f Hz" % [res.x, res.y, hz],
+		"📡 预估未压缩视频传输带宽： %.1f Gbps（%s）" % [info.gbps, info.tier],
+		"🔌 接口与线缆协议需求：%s" % info.cable,
+	])
+	if v.display_mode == VideoConfig.DisplayMode.WINDOWED:
+		lines.append("💡 提示：窗口化模式受 Windows DWM 桌面合成器影响；如需锁定物理高刷与最低输入延迟，推荐使用【独占全屏】。")
+	_bandwidth_text.text = "\n".join(lines)
+
+	if _bandwidth_alert != null:
+		if info.warning != "":
+			_bandwidth_alert.text = info.warning
+			_bandwidth_alert.visible = true
+		else:
+			_bandwidth_alert.visible = false
+
+
+# ---------------------------------------------------------------------------
+# 分页五：数据
 # ---------------------------------------------------------------------------
 
 func _populate_data() -> void:
 	_clear(_data_box)
-	_data_box.add_child(UITheme.heading("摇杆偏转量分布"))
+	_data_box.add_child(UITheme.heading("📊 摇杆偏转量分布 (Deflection Histogram)"))
 	_data_box.add_child(UITheme.hint(
-		"只统计摇杆真正在动的时间。橙色的前三个桶是微操区——"
+		"只统计摇杆真正在动的时间。橙色的前三个桶是微操区（0~30% 行程）——"
 		+ "如果你的时间大量落在这里，那么响应曲线的前段就是最该被调好的部分，"
 		+ "而边缘段调多少都感觉不到。这是普通练枪软件给不了的信息。"
 	))
 	_histogram = Histogram.new()
-	_histogram.custom_minimum_size = Vector2(420, 150)
+	_histogram.custom_minimum_size = Vector2(460, 160)
 	_data_box.add_child(_histogram)
 
 	_data_box.add_child(UITheme.separator())
-	_data_box.add_child(UITheme.heading("本局数据"))
+	_data_box.add_child(UITheme.heading("📈 本局详细遥测 (Session Telemetry)"))
+	
+	var grid_card := PanelContainer.new()
+	grid_card.add_theme_stylebox_override("panel", UITheme.panel_style(UITheme.PANEL_SOFT, 8, UITheme.OUTLINE, 1, 14))
+	_data_box.add_child(grid_card)
+
 	_data_text = UITheme.label("", 14, UITheme.TEXT)
-	_data_box.add_child(_data_text)
+	_data_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	grid_card.add_child(_data_text)
 	_refresh_data()
 
 
 func _refresh_data() -> void:
-	if scenario == null or _histogram == null:
+	if scenario == null or _histogram == null or _data_text == null:
 		return
 	var s := scenario.stats
 	var ratios := PackedFloat32Array()
@@ -725,15 +933,15 @@ func _refresh_data() -> void:
 	_histogram.caption = "摇杆偏转量"
 
 	_data_text.text = "\n".join(PackedStringArray([
-		"用时　　　　%.1f s" % s.elapsed,
-		"命中率　　　%d%%（%d / %d）" % [roundi(s.accuracy() * 100.0), s.hits, s.shots],
-		"击杀　　　　%d，每秒 %.2f" % [s.kills, s.kills_per_second()],
-		"在靶时间　　%.1f s，占比 %d%%" % [s.time_on_target, roundi(s.time_on_target_ratio() * 100.0)],
-		"平均转移　　%.0f ms" % (s.avg_reaction() * 1000.0),
-		"平均偏转量　%.2f" % s.avg_deflection(),
-		"推杆时间　　占全局 %d%%" % roundi(s.active_ratio() * 100.0),
-		"微操区占比　%d%%" % roundi(s.fine_control_ratio() * 100.0),
-		"辅助生效　　%d%% 的时间视角受到了辅助干预" % roundi(s.assist_ratio() * 100.0),
+		"• 训练用时:　　%.1f 秒" % s.elapsed,
+		"• 命中率:　　　%d%%（命中 %d / 射击 %d）" % [roundi(s.accuracy() * 100.0), s.hits, s.shots],
+		"• 击杀统计:　　%d 次击杀（每秒 %.2f 次）" % [s.kills, s.kills_per_second()],
+		"• 在靶时间:　　%.1f 秒（占比 %d%%）" % [s.time_on_target, roundi(s.time_on_target_ratio() * 100.0)],
+		"• 平均转移:　　%.0f 毫秒" % (s.avg_reaction() * 1000.0),
+		"• 平均偏转量:　%.2f" % s.avg_deflection(),
+		"• 推杆活跃时间: 占全局 %d%%" % roundi(s.active_ratio() * 100.0),
+		"• 微操区占比:　%d%%（0~0.3 行程）" % roundi(s.fine_control_ratio() * 100.0),
+		"• 辅助瞄准干预: %d%% 的时间视角受到了辅助修正" % roundi(s.assist_ratio() * 100.0),
 	]))
 
 
