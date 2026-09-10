@@ -727,6 +727,15 @@ func _populate_scenario() -> void:
 		_apply_scenario_live()
 	, _scenario_box)
 
+	_section("靶场与走位限制 (Range & Movement)", _scenario_box)
+	_add(ParamRow.options("靶位走位模式",
+		PackedStringArray(AppState.RANGE_MOVE_MODE_LABELS), App.range_move_mode,
+		"靶场模式锁定前后位移，严格保持与靶机的设计射击距离；左右移动不设限制，支持全场自由横移与晃身跟枪。"
+	), func(v: int) -> void:
+		App.range_move_mode = v as AppState.RangeMoveMode
+		App.notify_range_move_mode_changed()
+	, _scenario_box)
+
 
 # ---------------------------------------------------------------------------
 # 分页四：画面/视频设置

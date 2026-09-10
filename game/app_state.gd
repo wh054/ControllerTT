@@ -11,8 +11,22 @@ signal profile_changed
 signal assist_changed
 signal scenario_changed
 signal video_changed
+const RangeBounds = preload("res://core/range/range_bounds.gd")
+
 signal weapon_visual_changed
 signal audio_changed
+signal range_move_mode_changed
+
+enum RangeMoveMode {
+	RANGE_DISTANCE, # 靶场保距 (前后保持射距，左右自由横移)
+	STATION_FIXED,  # 固定站位 (完全禁止位移，纯站桩射击)
+	FREE,           # 自由漫游 (全场无限制走位)
+}
+
+const STATION_LANE := RangeMoveMode.RANGE_DISTANCE
+const STATION_WIDE := RangeMoveMode.RANGE_DISTANCE
+
+const RANGE_MOVE_MODE_LABELS := RangeBounds.LABELS
 
 enum WeaponVisualMode {
 	AUTO_BY_SCENARIO, # 自动（全自动为 M4，半自动/精度为沙鹰）
@@ -41,6 +55,7 @@ var video: VideoConfig
 var weapon_visual: WeaponVisualMode = WeaponVisualMode.AUTO_BY_SCENARIO
 var sfx_volume: float = 0.85
 var sfx_enabled: bool = true
+var range_move_mode: RangeMoveMode = RangeMoveMode.RANGE_DISTANCE
 
 
 func _ready() -> void:
@@ -100,6 +115,10 @@ func notify_weapon_visual_changed() -> void:
 
 func notify_audio_changed() -> void:
 	audio_changed.emit()
+
+
+func notify_range_move_mode_changed() -> void:
+	range_move_mode_changed.emit()
 
 
 func apply_profile_preset(p: ControllerProfile) -> void:

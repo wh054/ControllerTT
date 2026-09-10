@@ -8,6 +8,7 @@ class_name Player
 extends Node3D
 
 const VideoConfig = preload("res://core/video/video_config.gd")
+const RangeBounds = preload("res://core/range/range_bounds.gd")
 
 ## 俯仰角上下限，度。略小于 90 以免视角翻转。
 const PITCH_LIMIT := 89.0
@@ -66,6 +67,7 @@ func _ready() -> void:
 	App.audio_changed.connect(_sync_audio)
 	App.weapon_visual_changed.connect(_update_weapon_rig)
 	App.scenario_changed.connect(_update_weapon_rig)
+	App.range_move_mode_changed.connect(_on_range_move_mode_changed)
 	camera.fov = _current_base_vfov()
 	reset_pose()
 
@@ -174,17 +176,32 @@ func _targets() -> Array:
 	return scenario.active_targets() if scenario != null else []
 
 
+func get_movement_bounds() -> Dictionary:
+	return RangeBounds.get_bounds(App.range_move_mode, arena_half)
+
+
+func _clamp_position_to_bounds() -> void:
+	global_position = RangeBounds.clamp_position(
+		global_position, App.range_move_mode, _current_eye_height(), arena_half
+	)
+
+
+func _on_range_move_mode_changed() -> void:
+	_clamp_position_to_bounds()
+
+
 func _advance_movement(move: Vector2, delta: float) -> void:
+	if App.range_move_mode == RangeBounds.Mode.STATION_FIXED:
+		global_position = Vector3(0.0, _current_eye_height(), 0.0)
+		return
 	if move == Vector2.ZERO:
 		return
 	# 摇杆 +y 向下代表向后，故直接用 move.y 作为局部 Z 分量（局部 -Z 为前方）。
 	var local := Vector3(move.x, 0.0, move.y)
 	var world := Basis(Vector3.UP, deg_to_rad(-_yaw)) * local
 	var pos := global_position + world * move_speed * delta
-	global_position = Vector3(
-		clampf(pos.x, -arena_half, arena_half),
-		_current_eye_height(),
-		clampf(pos.z, -arena_half, arena_half),
+	global_position = RangeBounds.clamp_position(
+		pos, App.range_move_mode, _current_eye_height(), arena_half
 	)
 
 

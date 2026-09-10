@@ -36,6 +36,7 @@ func _run() -> void:
 	await _check_settings_pause()
 	await _check_settings_apply_live()
 	await _check_profile_presets_hot_swap()
+	await _check_shooting_range_distance_maintained()
 	await _check_return_to_menu()
 
 	print("")
@@ -275,6 +276,34 @@ func _check_profile_presets_hot_swap() -> void:
 		_expect(_player.assist.config == c, "切换到「%s」后辅助应立刻生效" % c.config_name)
 	_expect(_scenario.elapsed() >= before, "换手感参数不该重开当前这一局")
 	print("[OK] 手感与辅助参数热更新，且不打断当前场次")
+
+
+func _check_shooting_range_distance_maintained() -> void:
+	_main.start_session(ScenarioDef.preset_flick())
+	await _frames(3)
+
+	# 模拟玩家用力持续向前推动左摇杆，试图冲向靶机
+	for i in 20:
+		_player._advance_movement(Vector2(0.0, -1.0), 0.05)
+		await _frames(1)
+
+	_expect(_player.global_position.z >= -0.151, "靶场模式下角色向前移动应被射击席阻挡，不可冲入靶区")
+	_expect(_player.global_position.z <= 0.251, "靶场模式下角色应停留在射击席内")
+
+	# 验证与场上所有靶机的纵深距离均保持在设计距离以上
+	for node in _scenario.active_targets():
+		var t := node as Target
+		var depth_dist := _player.global_position.z - t.global_position.z
+		_expect(depth_dist >= 14.0, "角色与靶机之间的设计射距应严格保持")
+
+	# 模拟玩家向右横向走位（测试左右不设限制，支持自由晃身与横移跟枪）
+	for i in 20:
+		_player._advance_movement(Vector2(1.0, 0.0), 0.05)
+		await _frames(1)
+
+	_expect(_player.global_position.x > 2.0, "靶场模式下左右行动范围不应限制在小隔间内，应支持自由横向走位")
+
+	print("[OK] 靶场模式严格保持射击距离，且左右走位不设限制")
 
 
 func _check_return_to_menu() -> void:
